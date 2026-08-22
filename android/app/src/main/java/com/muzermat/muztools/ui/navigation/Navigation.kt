@@ -67,6 +67,9 @@ fun AppNavigation(
         composable(Screen.Auth.route) {
             AuthScreen(
                 onLoginSuccess = {
+                    homeViewModel.reset()
+                    sparkViewModel.reset()
+                    homeViewModel.loadIfNeeded()
                     navController.navigate(Screen.Main.route) {
                         popUpTo(Screen.Auth.route) { inclusive = true }
                     }
@@ -78,6 +81,8 @@ fun AppNavigation(
         composable(Screen.Main.route) {
             MainContainer(
                 onLogout = {
+                    homeViewModel.reset()
+                    sparkViewModel.reset()
                     authViewModel.logout()
                     navController.navigate(Screen.Auth.route) {
                         popUpTo(Screen.Main.route) { inclusive = true }

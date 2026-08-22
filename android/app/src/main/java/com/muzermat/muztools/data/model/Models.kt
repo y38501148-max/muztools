@@ -170,3 +170,28 @@ data class AppVersion(
     @SerialName("apk_url") val apkUrl: String = "",
     @SerialName("updated_at") val updatedAt: String = ""
 )
+
+
+@Serializable
+data class HomeSummaryResponse(
+    val user: User = User(username = ""),
+    val student: StudentStatusResponse = StudentStatusResponse(),
+    val schedule: SigninScheduleResponse = SigninScheduleResponse(),
+    val td: TdStatusResponse? = null,
+    val sunshine: SunshineStatusResponse? = null
+)
+
+@Serializable
+data class DouyinQrResponse(
+    @SerialName("login_id") val loginId: String = "",
+    val status: String = "pending",
+    @SerialName("qr_image") val qrImage: String = "",
+    val nickname: String = "",
+    val error: String = "",
+    val valid: Boolean = false
+)
+
+@Serializable
+data class DouyinQrCancelRequest(
+    @SerialName("login_id") val loginId: String
+)

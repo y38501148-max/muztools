@@ -53,6 +53,13 @@ class ApiClient(private val prefs: PreferencesManager) {
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
+    private fun longClient(): OkHttpClient = okHttpClient.newBuilder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .writeTimeout(45, TimeUnit.SECONDS)
+        .build()
+
+
     private suspend inline fun <reified T> executeGet(path: String): Result<T> = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(getFullUrl(path))
@@ -140,8 +147,11 @@ class ApiClient(private val prefs: PreferencesManager) {
     suspend fun requestFeature(feature: String): Result<GenericApiResponse> =
         executePost("/api/student/request", FeatureRequest(feature))
 
-    suspend fun getSigninSchedule(): Result<SigninScheduleResponse> =
-        executeGet("/api/signin/schedule")
+    suspend fun getSigninSchedule(cached: Boolean = false): Result<SigninScheduleResponse> =
+        executeGet("/api/signin/schedule?cached=${if (cached) 1 else 0}")
+
+    suspend fun getHome(cached: Boolean = true): Result<HomeSummaryResponse> =
+        executeGet("/api/home?cached=${if (cached) 1 else 0}")
 
     suspend fun setAutoSignin(enabled: Boolean): Result<GenericApiResponse> =
         executePost("/api/signin/auto", AutoSigninToggleRequest(enabled))
@@ -188,6 +198,30 @@ class ApiClient(private val prefs: PreferencesManager) {
     // Douyin APIs
     suspend fun submitDouyinSession(cookies: String): Result<DouyinSessionResponse> =
         executePost("/api/douyin/session", DouyinSessionRequest(cookies))
+
+    suspend fun startDouyinQr(): Result<DouyinQrResponse> = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(getFullUrl("/api/douyin/qr/start"))
+            .post("{}".toRequestBody(jsonMediaType))
+            .build()
+        try {
+            val response = longClient().newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(json.decodeFromString<DouyinQrResponse>(body))
+            } else {
+                Result.failure(ApiException(response.code, body.ifBlank { response.message }))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getDouyinQrStatus(loginId: String): Result<DouyinQrResponse> =
+        executeGet("/api/douyin/qr/status?login_id=$loginId")
+
+    suspend fun cancelDouyinQr(loginId: String): Result<GenericApiResponse> =
+        executePost("/api/douyin/qr/cancel", DouyinQrCancelRequest(loginId))
 
     suspend fun getDouyinSession(): Result<DouyinSessionResponse> =
         executeGet("/api/douyin/session")

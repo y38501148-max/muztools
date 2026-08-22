@@ -102,7 +102,7 @@ fun FeaturesScreen(
             item {
                 FeatureCard(
                     title = "抖音续火花",
-                    subtitle = "手机一键登录，每日自动互动续火花",
+                    subtitle = "抖音 App 扫码登录，每日自动续火花",
                     badgeText = "社交",
                     icon = Icons.Default.ElectricBolt,
                     iconTint = Color(0xFFE65100),

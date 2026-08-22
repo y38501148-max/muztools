@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.muzermat.muztools.data.api.ApiClient
 import com.muzermat.muztools.data.model.DouyinConfig
+import com.muzermat.muztools.data.model.DouyinQrResponse
 import com.muzermat.muztools.data.model.DouyinSessionResponse
 import com.muzermat.muztools.data.model.SparkTarget
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -23,7 +26,13 @@ data class SparkUiState(
     val studentStatus: String = "unbound",
     val isSubmittingCookie: Boolean = false,
     val isSavingConfig: Boolean = false,
-    val isRunningSpark: Boolean = false
+    val isRunningSpark: Boolean = false,
+    val showQrLogin: Boolean = false,
+    val qrLoginId: String = "",
+    val qrImage: String = "",
+    val qrStatus: String = "pending",
+    val qrError: String = "",
+    val qrLoading: Boolean = false
 )
 
 class SparkViewModel(
@@ -36,6 +45,13 @@ class SparkViewModel(
     private val _messageFlow = MutableSharedFlow<String>()
     val messageFlow: SharedFlow<String> = _messageFlow.asSharedFlow()
 
+    private var qrJob: Job? = null
+
+    fun reset() {
+        qrJob?.cancel()
+        _uiState.value = SparkUiState()
+    }
+
     fun loadData(isRefresh: Boolean = false) {
         viewModelScope.launch {
             _uiState.update {
@@ -43,7 +59,14 @@ class SparkViewModel(
             }
 
             val studentRes = apiClient.getStudentStatus()
-            val sessionRes = apiClient.getDouyinSession()
+            val sparkApproved = studentRes.getOrNull()?.let {
+                it.sparkStatus == "approved" || it.approvals.spark == "approved"
+            } == true
+            val sessionRes = if (sparkApproved) {
+                apiClient.getDouyinSession()
+            } else {
+                Result.success(DouyinSessionResponse())
+            }
             _uiState.update { current ->
                 current.copy(
                     isLoading = false,
@@ -58,9 +81,96 @@ class SparkViewModel(
     private fun ensureApproved(): Boolean {
         val approved = _uiState.value.studentStatus == "approved" || _uiState.value.studentStatus == "已通过"
         if (!approved) {
-            viewModelScope.launch { _messageFlow.emit("学生认证尚未通过审批，无法使用抖音续火花") }
+            viewModelScope.launch { _messageFlow.emit("抖音续火花尚未通过审批") }
         }
         return approved
+    }
+
+    fun startQrLogin() {
+        if (!ensureApproved()) return
+        qrJob?.cancel()
+        qrJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    showQrLogin = true,
+                    qrLoading = true,
+                    qrError = "",
+                    qrImage = "",
+                    qrStatus = "pending",
+                    qrLoginId = ""
+                )
+            }
+            val res = apiClient.startDouyinQr()
+            res.fold(
+                onSuccess = { qr ->
+                    _uiState.update {
+                        it.copy(
+                            qrLoginId = qr.loginId,
+                            qrImage = qr.qrImage,
+                            qrStatus = qr.status,
+                            qrError = qr.error,
+                            qrLoading = false
+                        )
+                    }
+                    if (qr.status == "success" || qr.valid) {
+                        onQrSuccess(qr)
+                    } else if (qr.status !in listOf("failed", "expired", "cancelled")) {
+                        pollQr(qr.loginId)
+                    }
+                },
+                onFailure = { err ->
+                    _uiState.update {
+                        it.copy(qrLoading = false, qrError = err.message ?: "无法生成二维码", qrStatus = "failed")
+                    }
+                }
+            )
+        }
+    }
+
+    private suspend fun pollQr(loginId: String) {
+        repeat(90) {
+            delay(2000)
+            val qr = apiClient.getDouyinQrStatus(loginId).getOrNull() ?: return@repeat
+            _uiState.update {
+                it.copy(
+                    qrImage = qr.qrImage.ifBlank { it.qrImage },
+                    qrStatus = qr.status,
+                    qrError = qr.error
+                )
+            }
+            if (qr.status == "success" || qr.valid) {
+                onQrSuccess(qr)
+                return
+            }
+            if (qr.status in listOf("failed", "expired", "cancelled")) return
+        }
+        _uiState.update { it.copy(qrStatus = "expired", qrError = "二维码已过期，请重试") }
+    }
+
+    private suspend fun onQrSuccess(qr: DouyinQrResponse) {
+        _uiState.update {
+            it.copy(
+                qrStatus = "success",
+                qrLoading = false,
+                session = DouyinSessionResponse(valid = true, nickname = qr.nickname.ifBlank { "抖音用户" })
+            )
+        }
+        _messageFlow.emit("抖音扫码登录成功")
+        delay(600)
+        closeQrLogin()
+        loadData(isRefresh = true)
+    }
+
+    fun closeQrLogin() {
+        val loginId = _uiState.value.qrLoginId
+        qrJob?.cancel()
+        qrJob = null
+        if (loginId.isNotBlank() && _uiState.value.qrStatus in listOf("pending", "scanned")) {
+            viewModelScope.launch { apiClient.cancelDouyinQr(loginId) }
+        }
+        _uiState.update {
+            it.copy(showQrLogin = false, qrLoading = false, qrError = "", qrStatus = "pending")
+        }
     }
 
     fun submitCookies(cookieJson: String) {

@@ -8,7 +8,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,7 +31,6 @@ fun SparkScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showCookieDialog by remember { mutableStateOf(false) }
-    var showWebLogin by remember { mutableStateOf(false) }
     var cookieInput by remember { mutableStateOf("") }
 
     var showAddTargetDialog by remember { mutableStateOf(false) }
@@ -49,13 +47,14 @@ fun SparkScreen(
         }
     }
 
-    if (showWebLogin) {
-        DouyinWebLoginScreen(
-            onCaptured = { cookie ->
-                showWebLogin = false
-                if (cookie.isNotBlank()) viewModel.submitCookies(cookie)
-            },
-            onClose = { showWebLogin = false }
+    if (uiState.showQrLogin) {
+        DouyinQrLoginScreen(
+            imageBase64 = uiState.qrImage,
+            status = uiState.qrStatus,
+            error = uiState.qrError,
+            loading = uiState.qrLoading,
+            onRefresh = { viewModel.startQrLogin() },
+            onClose = { viewModel.closeQrLogin() }
         )
         return
     }
@@ -156,7 +155,7 @@ fun SparkScreen(
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = if (uiState.session.valid) "过期时间: ${uiState.session.expireTime ?: "长期有效"}" else "支持手机一键登录或导入 Cookie",
+                                    text = if (uiState.session.valid) "过期时间: ${uiState.session.expireTime ?: "长期有效"}" else "使用抖音 App 扫码登录，或导入 Cookie",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -170,14 +169,14 @@ fun SparkScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Button(
-                                onClick = { showWebLogin = true },
+                                onClick = { viewModel.startQrLogin() },
                                 enabled = approved,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1.2f).height(42.dp)
                             ) {
                                 Icon(Icons.Default.Login, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("一键登录", fontWeight = FontWeight.SemiBold)
+                                Text("扫码登录", fontWeight = FontWeight.SemiBold)
                             }
                             OutlinedButton(
                                 onClick = {
@@ -230,8 +229,8 @@ fun SparkScreen(
                                 )
                             }
                             Switch(
-                                checked = uiState.enabled,
-                                onCheckedChange = { viewModel.toggleEnabled(it) },
+                                checked = uiState.config.enabled,
+                                onCheckedChange = { viewModel.toggleAutoSpark(it) },
                                 enabled = approved && uiState.session.valid
                             )
                         }
@@ -262,7 +261,7 @@ fun SparkScreen(
                                 color = MaterialTheme.colorScheme.surfaceVariant
                             ) {
                                 Text(
-                                    text = uiState.scheduleTime,
+                                    text = String.format("%02d:00", uiState.config.hour),
                                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
@@ -272,13 +271,34 @@ fun SparkScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         OutlinedTextField(
-                            value = uiState.defaultMessage,
-                            onValueChange = { viewModel.updateDefaultMessage(it) },
+                            value = uiState.config.defaultMessage,
+                            onValueChange = { viewModel.setDefaultMessage(it) },
                             label = { Text("默认续火花发送文案") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Button(
+                            onClick = { viewModel.updateConfig() },
+                            enabled = approved && !uiState.isSavingConfig,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (uiState.isSavingConfig) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("正在保存...")
+                            } else {
+                                Text("保存自动化配置")
+                            }
+                        }
                     }
                 }
             }
@@ -305,7 +325,7 @@ fun SparkScreen(
                 )
             }
 
-            if (uiState.targets.isEmpty()) {
+            if (uiState.config.targets.isEmpty()) {
                 item {
                     Card(
                         modifier = Modifier
@@ -332,11 +352,11 @@ fun SparkScreen(
                     }
                 }
             } else {
-                items(uiState.targets) { target ->
+                items(uiState.config.targets) { target ->
                     SparkTargetCard(
                         target = target,
-                        defaultMessage = uiState.defaultMessage,
-                        onDelete = { viewModel.deleteTarget(target.id) }
+                        defaultMessage = uiState.config.defaultMessage,
+                        onDelete = { viewModel.removeTarget(target) }
                     )
                 }
             }
@@ -350,14 +370,14 @@ fun SparkScreen(
                         .padding(horizontal = 16.dp)
                 ) {
                     FilledTonalButton(
-                        onClick = { viewModel.triggerManualSpark() },
-                        enabled = !uiState.isTriggering && approved && uiState.session.valid && uiState.targets.isNotEmpty(),
+                        onClick = { viewModel.runSparkNow() },
+                        enabled = !uiState.isRunningSpark && approved && uiState.session.valid && uiState.config.targets.isNotEmpty(),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp)
                     ) {
-                        if (uiState.isTriggering) {
+                        if (uiState.isRunningSpark) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
                                 strokeWidth = 2.dp,
@@ -384,7 +404,7 @@ fun SparkScreen(
             text = {
                 Column {
                     Text(
-                        text = "可粘贴 Cookie；手机用户请优先使用一键登录。",
+                        text = "可粘贴 Cookie。推荐使用抖音 App 扫描二维码登录。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

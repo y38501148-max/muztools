@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, UploadFile
+import asyncio
+
+from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import appver, sunshine, td
 from .config import ensure_dirs
 from .douyin import normalize_cookies, run_spark
+from .douyin_qr import cancel_session, get_session, public_qr, start_qr_login
 from .notify import list_notifications, mark_read
 from .scheduler import start_scheduler
 from .signin_core import perform_duaa_login, safe_fetch_schedule
@@ -63,6 +66,118 @@ def require_feature(user: dict[str, Any], feature: str) -> dict[str, Any]:
         raise HTTPException(status_code=403, detail=f"{names.get(feature, feature)}尚未通过审批")
     return student
 
+
+
+def student_payload(user: dict[str, Any]) -> dict[str, Any]:
+    payload = public_user(user)
+    student = payload["student"]
+    approvals = payload.get("approvals", {})
+    return {
+        "status": student.get("status") or "unbound",
+        "student_id": student.get("student_id"),
+        "display_name": student.get("real_name") or user.get("display_name"),
+        "student": student,
+        "approvals": approvals,
+        "signin_status": approvals.get("signin", "none"),
+        "td_status": approvals.get("td", "none"),
+        "spark_status": approvals.get("spark", "none"),
+    }
+
+
+def format_schedule(sched: list[dict[str, Any]], enabled: bool, approved: bool, today: str, cached: bool) -> dict[str, Any]:
+    schedule = []
+    for course in sched:
+        begin = str(course.get("classBeginTime") or "")
+        end = str(course.get("classEndTime") or "")
+        signed = str(course.get("signStatus")) == "1"
+        schedule.append(
+            {
+                "course_name": course.get("courseName") or "课程",
+                "classroom": course.get("roomName") or course.get("classroomName") or "",
+                "start_time": begin.split(" ")[-1][:5] if begin else "",
+                "end_time": end.split(" ")[-1][:5] if end else "",
+                "status": "signed" if signed else "pending",
+                "scheduled_time": course.get("auto_sign_trigger_hm") or "",
+                "course_id": str(course.get("id") or ""),
+                **{k: v for k, v in course.items() if k not in {"id"}},
+                "id": course.get("id"),
+            }
+        )
+    return {
+        "date": today,
+        "courses": sched,
+        "schedule": schedule,
+        "enabled": enabled,
+        "approved": approved,
+        "auto_signin": enabled,
+        "cached": cached,
+    }
+
+
+async def load_schedule(user: dict[str, Any], use_cache: bool) -> dict[str, Any]:
+    from datetime import datetime
+    from .signin_core import TZ_BEIJING
+
+    student = user.get("student") or {}
+    today = datetime.now(TZ_BEIJING).strftime("%Y%m%d")
+    empty = format_schedule([], bool(student.get("auto_signin")), ensure_approvals(user)["approvals"].get("signin") == "approved", today, True)
+    if not student.get("student_id"):
+        return empty
+    cached_rows = student.get("today_schedule") or []
+    if use_cache and student.get("schedule_date") == today and cached_rows:
+        return format_schedule(cached_rows, bool(student.get("auto_signin")), ensure_approvals(user)["approvals"].get("signin") == "approved", today, True)
+    try:
+        sched, _auth = await safe_fetch_schedule(student, today)
+    except Exception:
+        if cached_rows:
+            return format_schedule(cached_rows, bool(student.get("auto_signin")), ensure_approvals(user)["approvals"].get("signin") == "approved", today, True)
+        raise
+    old = {item.get("id"): item.get("auto_sign_trigger_hm") for item in cached_rows}
+    for course in sched:
+        course["auto_sign_trigger_hm"] = old.get(course.get("id"), course.get("auto_sign_trigger_hm"))
+    student["today_schedule"] = sched
+    student["schedule_date"] = today
+    save_user(user)
+    return format_schedule(sched, bool(student.get("auto_signin")), ensure_approvals(user)["approvals"].get("signin") == "approved", today, False)
+
+
+async def load_td(user: dict[str, Any]) -> dict[str, Any]:
+    student = require_feature(user, "td")
+    rows = await td.query_td_counts(student["student_id"], student["password"])
+    latest = td.latest_count(rows)
+    photos = photo_dir(user["id"])
+    campus = user.get("td", {}).get("campus", "xueyuanlu")
+    return {
+        "latest": latest,
+        "rows": rows,
+        "machines": td.campus_machines(campus),
+        "gap_seconds": user.get("td", {}).get("gap_seconds", 240),
+        "has_entrance_photo": (photos / "entrance.jpg").exists(),
+        "has_exit_photo": (photos / "exit.jpg").exists(),
+        "campus": campus,
+        "semester_count": latest.get("count", 0),
+        "target_count": 32,
+        "status": "ok",
+    }
+
+
+async def load_sunshine(user: dict[str, Any]) -> dict[str, Any]:
+    student = require_feature(user, "td")
+    data = await sunshine.query_sunshine(student["student_id"], student["password"])
+    data["count"] = data.get("term_count", 0)
+    data["target_count"] = data.get("term_target", 16)
+    return data
+
+
+def persist_qr_cookies(user: dict[str, Any], session) -> None:
+    if session.status != "success" or not session.cookies or session.persisted:
+        return
+    user.setdefault("douyin", {})
+    user["douyin"]["cookies"] = session.cookies
+    if session.nickname:
+        user["douyin"]["username"] = session.nickname
+    save_user(user)
+    session.persisted = True
 
 @app.on_event("startup")
 async def on_startup() -> None:
@@ -186,18 +301,34 @@ async def bind_student(payload: dict[str, Any] = Body(...), user: dict[str, Any]
 
 @app.get("/api/student")
 async def student_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    payload = public_user(user)
-    student = payload["student"]
-    approvals = payload.get("approvals", {})
+    return student_payload(user)
+
+
+@app.get("/api/home")
+async def home_summary(cached: int = Query(default=1), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    ensure_approvals(user)
+    approvals = user.get("approvals") or {}
+    try:
+        schedule = await load_schedule(user, use_cache=bool(cached))
+    except Exception as exc:
+        schedule = {"schedule": [], "enabled": False, "message": str(exc), "cached": True}
+    td_payload = None
+    sunshine_payload = None
+    if approvals.get("td") == "approved" and (user.get("student") or {}).get("student_id"):
+        try:
+            td_payload = await load_td(user)
+        except Exception as exc:
+            td_payload = {"semester_count": 0, "target_count": 32, "status": "error", "message": str(exc)}
+        try:
+            sunshine_payload = await load_sunshine(user)
+        except Exception as exc:
+            sunshine_payload = {"count": 0, "target_count": 16, "message": str(exc)}
     return {
-        "status": student.get("status") or "unbound",
-        "student_id": student.get("student_id"),
-        "display_name": student.get("real_name") or user.get("display_name"),
-        "student": student,
-        "approvals": approvals,
-        "signin_status": approvals.get("signin", "none"),
-        "td_status": approvals.get("td", "none"),
-        "spark_status": approvals.get("spark", "none"),
+        "user": public_user(user),
+        "student": student_payload(user),
+        "schedule": schedule,
+        "td": td_payload,
+        "sunshine": sunshine_payload,
     }
 
 
@@ -216,48 +347,12 @@ async def request_feature(payload: dict[str, Any] = Body(...), user: dict[str, A
 
 
 @app.get("/api/signin/schedule")
-async def signin_schedule(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    from datetime import datetime
-    from .signin_core import TZ_BEIJING
-
-    student = require_student(user)
-    today = datetime.now(TZ_BEIJING).strftime("%Y%m%d")
+async def signin_schedule(cached: int = Query(default=0), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_student(user)
     try:
-        sched, _auth = await safe_fetch_schedule(student, today)
+        return await load_schedule(user, use_cache=bool(cached))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"课表查询失败：{exc}") from exc
-    old = {item.get("id"): item.get("auto_sign_trigger_hm") for item in student.get("today_schedule", [])}
-    for course in sched:
-        course["auto_sign_trigger_hm"] = old.get(course.get("id"), course.get("auto_sign_trigger_hm"))
-    student["today_schedule"] = sched
-    student["schedule_date"] = today
-    save_user(user)
-    schedule = []
-    for course in sched:
-        begin = str(course.get("classBeginTime") or "")
-        end = str(course.get("classEndTime") or "")
-        signed = str(course.get("signStatus")) == "1"
-        schedule.append(
-            {
-                "course_name": course.get("courseName") or "课程",
-                "classroom": course.get("roomName") or course.get("classroomName") or "",
-                "start_time": begin.split(" ")[-1][:5] if begin else "",
-                "end_time": end.split(" ")[-1][:5] if end else "",
-                "status": "signed" if signed else "pending",
-                "scheduled_time": course.get("auto_sign_trigger_hm") or "",
-                "course_id": str(course.get("id") or ""),
-                **{k: v for k, v in course.items() if k not in {"id"}},
-                "id": course.get("id"),
-            }
-        )
-    return {
-        "date": today,
-        "courses": sched,
-        "schedule": schedule,
-        "enabled": bool(student.get("auto_signin")),
-        "approved": ensure_approvals(user)["approvals"].get("signin") == "approved",
-        "auto_signin": bool(student.get("auto_signin")),
-    }
 
 
 @app.post("/api/signin/auto")
@@ -271,26 +366,12 @@ async def toggle_auto(payload: dict[str, Any] = Body(...), user: dict[str, Any] 
 
 @app.get("/api/td/status")
 async def td_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    student = require_feature(user, "td")
     try:
-        rows = await td.query_td_counts(student["student_id"], student["password"])
-        latest = td.latest_count(rows)
+        return await load_td(user)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    photos = photo_dir(user["id"])
-    campus = user.get("td", {}).get("campus", "xueyuanlu")
-    return {
-        "latest": latest,
-        "rows": rows,
-        "machines": td.campus_machines(campus),
-        "gap_seconds": user.get("td", {}).get("gap_seconds", 240),
-        "has_entrance_photo": (photos / "entrance.jpg").exists(),
-        "has_exit_photo": (photos / "exit.jpg").exists(),
-        "campus": campus,
-        "semester_count": latest.get("count", 0),
-        "target_count": 32,
-        "status": "ok",
-    }
 
 
 @app.post("/api/td/photos")
@@ -322,12 +403,41 @@ async def td_manual(payload: dict[str, Any] = Body(default={}), user: dict[str, 
 @app.get("/api/sunshine/status")
 async def sunshine_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     try:
-        data = await sunshine.query_sunshine(student["student_id"], student["password"])
+        return await load_sunshine(user)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    data["count"] = data.get("term_count", 0)
-    data["target_count"] = data.get("term_target", 16)
-    return data
+
+
+@app.post("/api/douyin/qr/start")
+async def douyin_qr_start(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_feature(user, "spark")
+    try:
+        session = await asyncio.to_thread(start_qr_login, user["id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    persist_qr_cookies(user, session)
+    return public_qr(session)
+
+
+@app.get("/api/douyin/qr/status")
+async def douyin_qr_status(login_id: str = Query(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_feature(user, "spark")
+    session = get_session(login_id)
+    if not session or session.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="登录会话不存在或已过期")
+    persist_qr_cookies(user, session)
+    return public_qr(session)
+
+
+@app.post("/api/douyin/qr/cancel")
+async def douyin_qr_cancel(payload: dict[str, Any] = Body(default={}), user: dict[str, Any] = Depends(current_user)) -> dict[str, str]:
+    require_feature(user, "spark")
+    login_id = str(payload.get("login_id") or "")
+    if login_id:
+        cancel_session(login_id, user["id"])
+    return {"status": "ok"}
 
 
 @app.post("/api/douyin/session")
