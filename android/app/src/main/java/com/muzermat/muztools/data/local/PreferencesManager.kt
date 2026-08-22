@@ -17,7 +17,8 @@ class PreferencesManager(context: Context) {
         private const val KEY_PASSWORD = "password"
         private const val KEY_REMEMBER_PASSWORD = "remember_password"
         private const val KEY_AUTO_LOGIN = "auto_login"
-        private const val DEFAULT_SERVER_URL = "http://150.138.79.9:18787"
+        private const val DEFAULT_SERVER_URL = "http://150.138.79.9:10023"
+        private const val LEGACY_SERVER_URL = "http://150.138.79.9:18787"
     }
 
     private val prefs: SharedPreferences = try {
@@ -36,7 +37,14 @@ class PreferencesManager(context: Context) {
     }
 
     var serverUrl: String
-        get() = prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER_URL) ?: DEFAULT_SERVER_URL
+        get() {
+            val stored = prefs.getString(KEY_SERVER_URL, null)?.trim()?.trimEnd('/')
+            return if (stored.isNullOrBlank() || stored == LEGACY_SERVER_URL) {
+                DEFAULT_SERVER_URL
+            } else {
+                stored
+            }
+        }
         set(value) = prefs.edit().putString(KEY_SERVER_URL, value.trim().trimEnd('/')).apply()
 
     var token: String?

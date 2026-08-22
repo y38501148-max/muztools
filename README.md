@@ -59,7 +59,7 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-安装包输出在 `android/app/build/outputs/apk/debug/`。默认 API 地址 `http://150.138.79.9:18787`，可在登录页修改。
+安装包输出在 `android/app/build/outputs/apk/debug/`。客户端默认连接外网 API `http://150.138.79.9:10023`（映射到 Server2 的 18787），界面不展示该地址。
 
 ## Server2 部署
 

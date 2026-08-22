@@ -3,7 +3,7 @@
 主机：`ssh server2`（`150.138.79.9:10059`）
 
 数据目录：`/root/muz-tool/data`  
-API 端口：`18787`
+内部 API 端口：`18787`（外网映射 `150.138.79.9:10023`）
 
 ```bash
 rsync -az --delete \
