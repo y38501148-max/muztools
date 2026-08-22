@@ -8,7 +8,18 @@ from .store import now_iso
 
 def normalize_cookies(raw: Any) -> list[dict[str, Any]]:
     if isinstance(raw, str):
-        raw = json.loads(raw)
+        text = raw.strip()
+        if text.startswith("{") or text.startswith("["):
+            raw = json.loads(text)
+        else:
+            raw = []
+            for part in text.split(";"):
+                if "=" not in part:
+                    continue
+                name, value = part.split("=", 1)
+                name, value = name.strip(), value.strip()
+                if name:
+                    raw.append({"name": name, "value": value, "domain": ".douyin.com", "path": "/"})
     if isinstance(raw, dict):
         if "cookies" in raw:
             raw = raw["cookies"]

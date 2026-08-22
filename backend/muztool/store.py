@@ -42,8 +42,38 @@ def _locked_write(path: Path, data: Any) -> None:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+FEATURE_KEYS = ("signin", "td", "spark")
+
+
 def user_path(user_id: str) -> Path:
     return DATA_DIR / "users" / f"{user_id}.json"
+
+
+def ensure_approvals(user: dict[str, Any]) -> dict[str, Any]:
+    approvals = user.setdefault("approvals", {})
+    legacy = user.get("student", {}).get("status")
+    for key in FEATURE_KEYS:
+        if key in approvals and approvals[key]:
+            continue
+        if legacy == "approved":
+            approvals[key] = "approved"
+        elif legacy == "pending":
+            approvals[key] = "pending"
+        elif legacy == "rejected":
+            approvals[key] = "rejected"
+        else:
+            approvals[key] = "none"
+    return user
+
+
+def set_feature_approval(user: dict[str, Any], feature: str, status: str) -> dict[str, Any]:
+    if feature not in FEATURE_KEYS:
+        raise ValueError(f"未知功能：{feature}")
+    ensure_approvals(user)
+    user["approvals"][feature] = status
+    if feature == "signin" and status != "approved":
+        user.setdefault("student", {})["auto_signin"] = False
+    return user
 
 
 def empty_user(username: str, password: str, display_name: str) -> dict[str, Any]:
@@ -65,6 +95,7 @@ def empty_user(username: str, password: str, display_name: str) -> dict[str, Any
             "today_schedule": [],
             "schedule_date": "",
         },
+        "approvals": {"signin": "none", "td": "none", "spark": "none"},
         "td": {
             "campus": "xueyuanlu",
             "gap_seconds": 240,
@@ -90,7 +121,10 @@ def load_user(user_id: str) -> dict[str, Any] | None:
     path = user_path(user_id)
     if not path.exists():
         return None
-    return _locked_read(path, {})
+    data = _locked_read(path, {})
+    if data:
+        ensure_approvals(data)
+    return data
 
 
 def save_user(user: dict[str, Any]) -> None:
@@ -191,6 +225,7 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
             "auto_signin": bool(student.get("auto_signin")),
             "schedule_date": student.get("schedule_date", ""),
         },
+        "approvals": ensure_approvals(user).get("approvals", {}),
         "td": user.get("td", {}),
         "douyin": {
             "connected": bool(user.get("douyin", {}).get("cookies")),

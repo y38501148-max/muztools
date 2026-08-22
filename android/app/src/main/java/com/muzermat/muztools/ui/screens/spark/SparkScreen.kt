@@ -1,15 +1,20 @@
 package com.muzermat.muztools.ui.screens.spark
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,6 +32,7 @@ fun SparkScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showCookieDialog by remember { mutableStateOf(false) }
+    var showWebLogin by remember { mutableStateOf(false) }
     var cookieInput by remember { mutableStateOf("") }
 
     var showAddTargetDialog by remember { mutableStateOf(false) }
@@ -43,6 +49,17 @@ fun SparkScreen(
         }
     }
 
+    if (showWebLogin) {
+        DouyinWebLoginScreen(
+            onCaptured = { cookie ->
+                showWebLogin = false
+                if (cookie.isNotBlank()) viewModel.submitCookies(cookie)
+            },
+            onClose = { showWebLogin = false }
+        )
+        return
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -50,7 +67,10 @@ fun SparkScreen(
                 title = {
                     Text(
                         text = "抖音火花自动化",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
+                        )
                     )
                 },
                 actions = {
@@ -67,8 +87,10 @@ fun SparkScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { viewModel.loadData(isRefresh = true) },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = RoundedCornerShape(16.dp),
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 2.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
@@ -81,7 +103,7 @@ fun SparkScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
-            contentPadding = PaddingValues(bottom = 80.dp)
+            contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
         ) {
             val approved = uiState.studentStatus == "approved" || uiState.studentStatus == "已通过"
             if (!approved) {
@@ -96,57 +118,100 @@ fun SparkScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(18.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (uiState.session.valid)
+                                            Color(0xFFE65100).copy(alpha = 0.12f)
+                                        else
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ElectricBolt,
+                                    contentDescription = null,
+                                    tint = if (uiState.session.valid) Color(0xFFE65100) else MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = if (uiState.session.valid) "已绑定: ${uiState.session.nickname ?: "抖音用户"}" else "未登录抖音 Cookie",
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = if (uiState.session.valid) "过期时间: ${uiState.session.expireTime ?: "长期有效"}" else "请粘贴包含 Session 信息的 Cookie JSON",
+                                    text = if (uiState.session.valid) "过期时间: ${uiState.session.expireTime ?: "长期有效"}" else "支持手机一键登录或导入 Cookie",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
                             Button(
+                                onClick = { showWebLogin = true },
+                                enabled = approved,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1.2f).height(42.dp)
+                            ) {
+                                Icon(Icons.Default.Login, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("一键登录", fontWeight = FontWeight.SemiBold)
+                            }
+                            OutlinedButton(
                                 onClick = {
                                     cookieInput = ""
                                     showCookieDialog = true
                                 },
                                 enabled = approved,
-                                shape = RoundedCornerShape(10.dp)
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f).height(42.dp)
                             ) {
-                                Text(if (uiState.session.valid) "更新 Cookie" else "导入 Cookie")
+                                Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("导入")
                             }
                         }
                     }
                 }
             }
 
-            // 定时开关与全局默认文案
+            // 自动化配置与开关卡片
             item {
-                Spacer(modifier = Modifier.height(12.dp))
-                SectionHeader(title = "定时与消息配置")
+                Spacer(modifier = Modifier.height(14.dp))
+                SectionHeader(title = "自动化任务设置")
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(18.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -154,85 +219,112 @@ fun SparkScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "开启每日定时续火花",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                    text = "自动续火花",
+                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
                                 )
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "每天 ${uiState.config.hour}:00 自动向目标好友发送消息",
+                                    text = "每天定时向列表好友自动发送消息保持火花",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             Switch(
-                                checked = uiState.config.enabled,
-                                onCheckedChange = { viewModel.toggleAutoSpark(it) },
-                                enabled = approved
+                                checked = uiState.enabled,
+                                onCheckedChange = { viewModel.toggleEnabled(it) },
+                                enabled = approved && uiState.session.valid
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        OutlinedTextField(
-                            value = uiState.config.defaultMessage,
-                            onValueChange = { viewModel.setDefaultMessage(it) },
-                            label = { Text("全局默认续火花消息") },
-                            singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
+                        Divider(
+                            modifier = Modifier.padding(vertical = 12.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
 
-                        Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            TextButton(
-                                onClick = { viewModel.updateConfig() },
-                                enabled = !uiState.isSavingConfig
+                            Column {
+                                Text(
+                                    text = "执行时间",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                                )
+                                Text(
+                                    text = "每天定时触发",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant
                             ) {
-                                Text("保存默认消息")
+                                Text(
+                                    text = uiState.scheduleTime,
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedTextField(
+                            value = uiState.defaultMessage,
+                            onValueChange = { viewModel.updateDefaultMessage(it) },
+                            label = { Text("默认续火花发送文案") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }
 
-            // 目标好友列表
+            // 好友列表
             item {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 SectionHeader(
-                    title = "火花好友列表",
+                    title = "续火花好友名单",
                     action = {
-                        IconButton(onClick = {
-                            targetNameInput = ""
-                            targetMsgInput = ""
-                            showAddTargetDialog = true
-                        }) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = "添加好友")
+                        TextButton(
+                            onClick = {
+                                targetNameInput = ""
+                                targetMsgInput = ""
+                                showAddTargetDialog = true
+                            },
+                            enabled = approved && uiState.session.valid
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("添加好友")
                         }
                     }
                 )
             }
 
-            if (uiState.config.targets.isEmpty()) {
+            if (uiState.targets.isEmpty()) {
                 item {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                        shape = RoundedCornerShape(16.dp),
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(18.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                        )
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                     ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(24.dp),
+                                .padding(28.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "暂无配置的目标好友，点击右上角 + 添加",
+                                text = if (uiState.session.valid) "暂无好友，点击右上角添加" else "请先登录抖音账号",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -240,43 +332,43 @@ fun SparkScreen(
                     }
                 }
             } else {
-                items(uiState.config.targets) { target ->
+                items(uiState.targets) { target ->
                     SparkTargetCard(
                         target = target,
-                        defaultMessage = uiState.config.defaultMessage,
-                        onDelete = { viewModel.removeTarget(target) }
+                        defaultMessage = uiState.defaultMessage,
+                        onDelete = { viewModel.deleteTarget(target.id) }
                     )
                 }
             }
 
-            // 立即执行按钮
+            // 立即触发测试
             item {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                 ) {
-                    Button(
-                        onClick = { viewModel.runSparkNow() },
-                        enabled = !uiState.isRunningSpark && approved,
+                    FilledTonalButton(
+                        onClick = { viewModel.triggerManualSpark() },
+                        enabled = !uiState.isTriggering && approved && uiState.session.valid && uiState.targets.isNotEmpty(),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(52.dp)
+                            .height(48.dp)
                     ) {
-                        if (uiState.isRunningSpark) {
+                        if (uiState.isTriggering) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
+                                modifier = Modifier.size(20.dp),
                                 strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
+                                color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text("正在发送火花消息...")
+                            Text("正在执行续火花...")
                         } else {
-                            Icon(imageVector = Icons.Default.ElectricBolt, contentDescription = null)
+                            Icon(imageVector = Icons.Default.FlashOn, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("立即执行续火花", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("立即执行续火花", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -288,11 +380,11 @@ fun SparkScreen(
     if (showCookieDialog) {
         AlertDialog(
             onDismissRequest = { if (!uiState.isSubmittingCookie) showCookieDialog = false },
-            title = { Text("粘贴抖音 Cookie") },
+            title = { Text("导入") },
             text = {
                 Column {
                     Text(
-                        text = "请从浏览器抓取抖音网页版 Cookie JSON 或字符串：",
+                        text = "可粘贴 Cookie；手机用户请优先使用一键登录。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -303,7 +395,7 @@ fun SparkScreen(
                         label = { Text("Cookie JSON 内容") },
                         minLines = 4,
                         maxLines = 8,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -314,9 +406,10 @@ fun SparkScreen(
                         viewModel.submitCookies(cookieInput)
                         showCookieDialog = false
                     },
-                    enabled = !uiState.isSubmittingCookie && cookieInput.isNotBlank()
+                    enabled = !uiState.isSubmittingCookie && cookieInput.isNotBlank(),
+                    shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("导入并验证")
+                    Text("导入")
                 }
             },
             dismissButton = {
@@ -342,7 +435,7 @@ fun SparkScreen(
                         onValueChange = { targetNameInput = it },
                         label = { Text("好友昵称/备注") },
                         singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -351,7 +444,7 @@ fun SparkScreen(
                         onValueChange = { targetMsgInput = it },
                         label = { Text("专属消息 (留空则用默认文案)") },
                         singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -362,7 +455,8 @@ fun SparkScreen(
                         viewModel.addTarget(targetNameInput, targetMsgInput)
                         showAddTargetDialog = false
                     },
-                    enabled = targetNameInput.isNotBlank()
+                    enabled = targetNameInput.isNotBlank(),
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     Text("添加")
                 }
@@ -387,7 +481,7 @@ private fun SparkTargetCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
@@ -398,6 +492,21 @@ private fun SparkTargetCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = target.name,

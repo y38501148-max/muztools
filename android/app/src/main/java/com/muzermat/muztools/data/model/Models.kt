@@ -43,12 +43,28 @@ data class StudentBindRequest(
 )
 
 @Serializable
+data class FeatureApprovals(
+    val signin: String = "none",
+    val td: String = "none",
+    val spark: String = "none"
+)
+
+@Serializable
 data class StudentStatusResponse(
-    val status: String = "unbound", // unbound, pending, approved, rejected
+    val status: String = "unbound",
     @SerialName("student_id") val studentId: String? = null,
     @SerialName("display_name") val displayName: String? = null,
     val reason: String? = null,
-    val detail: String? = null
+    val detail: String? = null,
+    val approvals: FeatureApprovals = FeatureApprovals(),
+    @SerialName("signin_status") val signinStatus: String = "none",
+    @SerialName("td_status") val tdStatus: String = "none",
+    @SerialName("spark_status") val sparkStatus: String = "none"
+)
+
+@Serializable
+data class FeatureRequest(
+    val feature: String
 )
 
 @Serializable
@@ -78,7 +94,7 @@ data class AutoSigninToggleRequest(
 @Serializable
 data class TdStatusResponse(
     @SerialName("semester_count") val semesterCount: Int = 0,
-    @SerialName("target_count") val targetCount: Int = 45,
+    @SerialName("target_count") val targetCount: Int = 32,
     @SerialName("last_run_time") val lastRunTime: String? = null,
     val status: String? = null
 )
@@ -86,7 +102,7 @@ data class TdStatusResponse(
 @Serializable
 data class SunshineStatusResponse(
     val count: Int = 0,
-    @SerialName("target_count") val targetCount: Int = 40,
+    @SerialName("target_count") val targetCount: Int = 16,
     @SerialName("last_sync_time") val lastSyncTime: String? = null
 )
 

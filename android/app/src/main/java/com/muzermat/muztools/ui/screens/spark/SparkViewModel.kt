@@ -48,7 +48,7 @@ class SparkViewModel(
                 current.copy(
                     isLoading = false,
                     isRefreshing = false,
-                    studentStatus = studentRes.getOrNull()?.status ?: current.studentStatus,
+                    studentStatus = studentRes.getOrNull()?.let { it.sparkStatus.ifBlank { it.approvals.spark } } ?: current.studentStatus,
                     session = sessionRes.getOrDefault(current.session)
                 )
             }

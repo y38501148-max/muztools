@@ -28,17 +28,22 @@ release/     本地打出的安装包（apk 不入库）
 部署后在 Server2 执行 `muz-admin`。用户标识可以是用户名、学号或用户 ID。
 
 ```bash
-muz-admin pending                 # 待审批学生
-muz-admin list                    # 全部用户与状态
-muz-admin show <user>             # 查看单个用户
-muz-admin approve <user>          # 批准自动签到 / 手动 TD / 续火花
-muz-admin reject <user>           # 拒绝
-muz-admin revoke <user>           # 撤销认证并清除统一认证密码
-muz-admin disable-signin <user>   # 关闭自动签到
-muz-admin enable-signin <user>    # 开启自动签到（需已审批）
+muz-admin pending                 # 各功能待审批列表
+muz-admin list                    # 全部用户与分项审批状态
+muz-admin show <user>
+muz-admin approve-signin <user>   # 批准自动签到
+muz-admin approve-td <user>       # 批准 TD / 阳光
+muz-admin approve-spark <user>    # 批准抖音续火花
+muz-admin reject-signin <user>
+muz-admin reject-td <user>
+muz-admin reject-spark <user>
+muz-admin approve <user>          # 一次性批准全部功能
+muz-admin revoke <user>
+muz-admin disable-signin <user>
+muz-admin enable-signin <user>
 ```
 
-未批准用户可以注册应用账号、绑定学号并查课表，但不能开启自动签到、手动 TD 或抖音续火花。
+绑定学号只完成身份验证。自动签到、TD、续火花需分别申请，管理员分别批准后才能使用。
 
 ## 本地后端
 

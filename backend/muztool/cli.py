@@ -6,7 +6,7 @@ from typing import Any
 
 from .config import DATA_DIR, ensure_dirs
 from . import appver
-from .store import iter_users, public_user, resolve_user, save_user
+from .store import FEATURE_KEYS, ensure_approvals, iter_users, public_user, resolve_user, save_user, set_feature_approval
 
 
 def _print(data: Any) -> None:
@@ -20,18 +20,23 @@ def _need(user: dict[str, Any] | None, key: str) -> dict[str, Any]:
 
 
 def cmd_pending(_: argparse.Namespace) -> None:
-    items = [
-        {
-            "id": user["id"],
-            "username": user["username"],
-            "display_name": user.get("display_name"),
-            "student_id": user.get("student", {}).get("student_id"),
-            "real_name": user.get("student", {}).get("real_name"),
-            "status": user.get("student", {}).get("status"),
-        }
-        for user in iter_users()
-        if user.get("student", {}).get("status") == "pending"
-    ]
+    items = []
+    for user in iter_users():
+        ensure_approvals(user)
+        pending = [k for k, v in user.get("approvals", {}).items() if v == "pending"]
+        if not pending:
+            continue
+        items.append(
+            {
+                "id": user["id"],
+                "username": user["username"],
+                "display_name": user.get("display_name"),
+                "student_id": user.get("student", {}).get("student_id"),
+                "real_name": user.get("student", {}).get("real_name"),
+                "pending": pending,
+                "approvals": user.get("approvals"),
+            }
+        )
     _print({"count": len(items), "items": items})
 
 
@@ -48,6 +53,7 @@ def cmd_list(_: argparse.Namespace) -> None:
                 "real_name": student.get("real_name"),
                 "status": student.get("status"),
                 "auto_signin": student.get("auto_signin"),
+                "approvals": ensure_approvals(user).get("approvals"),
             }
         )
     _print({"count": len(items), "items": items})
@@ -64,14 +70,32 @@ def cmd_show(args: argparse.Namespace) -> None:
     _print(payload)
 
 
+def cmd_approve_feature(args: argparse.Namespace) -> None:
+    user = _need(resolve_user(args.user), args.user)
+    if not user.get("student", {}).get("student_id"):
+        raise SystemExit("该用户尚未绑定学号")
+    set_feature_approval(user, args.feature, "approved")
+    save_user(user)
+    print(f"已批准 {user['username']} 的 {args.feature}")
+
+
+def cmd_reject_feature(args: argparse.Namespace) -> None:
+    user = _need(resolve_user(args.user), args.user)
+    set_feature_approval(user, args.feature, "rejected")
+    save_user(user)
+    print(f"已拒绝 {user['username']} 的 {args.feature}")
+
+
 def cmd_approve(args: argparse.Namespace) -> None:
     user = _need(resolve_user(args.user), args.user)
     student = user.setdefault("student", {})
     if not student.get("student_id"):
         raise SystemExit("该用户尚未绑定学号")
-    student["status"] = "approved"
+    student["status"] = "verified"
+    for key in FEATURE_KEYS:
+        set_feature_approval(user, key, "approved")
     save_user(user)
-    print(f"已批准 {user['username']} / {student.get('student_id')}（{student.get('real_name') or user.get('display_name')}）")
+    print(f"已批准 {user['username']} 的全部功能")
 
 
 def cmd_reject(args: argparse.Namespace) -> None:
@@ -106,8 +130,8 @@ def cmd_disable_signin(args: argparse.Namespace) -> None:
 def cmd_enable_signin(args: argparse.Namespace) -> None:
     user = _need(resolve_user(args.user), args.user)
     student = user.setdefault("student", {})
-    if student.get("status") != "approved":
-        raise SystemExit("仅已审批学生可开启自动签到")
+    if ensure_approvals(user).get("approvals", {}).get("signin") != "approved":
+        raise SystemExit("仅已批准自动签到的用户可开启")
     student["auto_signin"] = True
     save_user(user)
     print(f"已开启 {user['username']} 的自动签到")
@@ -187,6 +211,19 @@ def build_parser() -> argparse.ArgumentParser:
     set_version.add_argument("--apk", default="", help="新安装包路径")
     set_version.add_argument("--force", action="store_true", help="强制更新，不可跳过")
     set_version.set_defaults(func=cmd_set_version)
+
+
+    for feature, help_text in (
+        ("signin", "自动签到"),
+        ("td", "TD / 阳光"),
+        ("spark", "抖音续火花"),
+    ):
+        ap = sub.add_parser(f"approve-{feature}", help=f"批准{help_text}")
+        ap.add_argument("user")
+        ap.set_defaults(func=cmd_approve_feature, feature=feature)
+        rp = sub.add_parser(f"reject-{feature}", help=f"拒绝{help_text}")
+        rp.add_argument("user")
+        rp.set_defaults(func=cmd_reject_feature, feature=feature)
 
     return parser
 

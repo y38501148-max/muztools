@@ -18,7 +18,7 @@ def _approved_auto_users() -> list[dict[str, Any]]:
     return [
         user
         for user in iter_users()
-        if user.get("student", {}).get("status") == "approved" and user.get("student", {}).get("auto_signin")
+        if user.get("approvals", {}).get("signin") == "approved" and user.get("student", {}).get("auto_signin")
     ]
 
 
@@ -83,7 +83,7 @@ async def douyin_hourly() -> None:
 
     for user in iter_users():
         cfg = user.get("douyin") or {}
-        if user.get("student", {}).get("status") != "approved":
+        if user.get("approvals", {}).get("spark") != "approved":
             continue
         if not cfg.get("enabled") or int(cfg.get("hour") or 9) != hour:
             continue

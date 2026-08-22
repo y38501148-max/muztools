@@ -137,6 +137,9 @@ class ApiClient(private val prefs: PreferencesManager) {
     suspend fun getStudentStatus(): Result<StudentStatusResponse> =
         executeGet("/api/student")
 
+    suspend fun requestFeature(feature: String): Result<GenericApiResponse> =
+        executePost("/api/student/request", FeatureRequest(feature))
+
     suspend fun getSigninSchedule(): Result<SigninScheduleResponse> =
         executeGet("/api/signin/schedule")
 

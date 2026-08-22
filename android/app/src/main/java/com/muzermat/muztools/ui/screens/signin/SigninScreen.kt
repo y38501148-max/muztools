@@ -43,9 +43,10 @@ fun SigninScreen(
         }
     }
 
-    val isApproved = uiState.studentStatus.status == "approved" || uiState.studentStatus.status == "已通过"
-    val isPending = uiState.studentStatus.status == "pending" || uiState.studentStatus.status == "待审批"
-    val isUnbound = uiState.studentStatus.status == "unbound" || uiState.studentStatus.status.isBlank()
+    val featureStatus = uiState.studentStatus.signinStatus.ifBlank { uiState.studentStatus.approvals.signin }
+    val isApproved = featureStatus == "approved" || featureStatus == "已通过"
+    val isPending = featureStatus == "pending" || featureStatus == "待审批"
+    val isUnbound = uiState.studentStatus.studentId.isNullOrBlank()
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },

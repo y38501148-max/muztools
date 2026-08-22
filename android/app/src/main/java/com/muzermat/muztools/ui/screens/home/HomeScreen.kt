@@ -9,11 +9,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -23,13 +25,12 @@ import com.muzermat.muztools.data.model.SigninScheduleItem
 import com.muzermat.muztools.ui.components.PendingApprovalBanner
 import com.muzermat.muztools.ui.components.SectionHeader
 import com.muzermat.muztools.ui.components.StatusBadge
-import com.muzermat.muztools.ui.theme.SuccessColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    onNavigateToTab: (Int) -> Unit
+    onNavigateToFeature: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -41,16 +42,38 @@ fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            text = "盐的工具箱",
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                        )
-                        Text(
-                            text = "你好，${uiState.displayName.ifBlank { "同学" }}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.School,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "盐的工具箱",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp
+                                )
+                            )
+                            Text(
+                                text = "你好，${uiState.displayName.ifBlank { "同学" }}",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -67,8 +90,10 @@ fun HomeScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { viewModel.loadData(isRefresh = true) },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = RoundedCornerShape(16.dp),
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 2.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
@@ -84,14 +109,17 @@ fun HomeScreen(
                     .padding(paddingValues),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(
+                    strokeWidth = 3.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         } else {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
-                contentPadding = PaddingValues(bottom = 80.dp)
+                contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
             ) {
                 if (uiState.studentStatus.status == "pending" || uiState.studentStatus.status == "待审批") {
                     item {
@@ -105,7 +133,7 @@ fun HomeScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = 16.dp, vertical = 2.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         StatCard(
@@ -114,7 +142,8 @@ fun HomeScreen(
                             target = uiState.tdStatus.targetCount,
                             unit = "次",
                             icon = Icons.Default.DirectionsRun,
-                            onClick = { onNavigateToTab(2) },
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            onClick = { onNavigateToFeature("td") },
                             modifier = Modifier.weight(1f)
                         )
                         StatCard(
@@ -123,7 +152,8 @@ fun HomeScreen(
                             target = uiState.sunshineStatus.targetCount,
                             unit = "次",
                             icon = Icons.Default.WbSunny,
-                            onClick = { onNavigateToTab(2) },
+                            iconColor = Color(0xFFF9AB00),
+                            onClick = { onNavigateToFeature("td") },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -131,12 +161,12 @@ fun HomeScreen(
 
                 // 快捷功能入口
                 item {
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                     SectionHeader(title = "常用功能")
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = 16.dp, vertical = 2.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         QuickActionItem(
@@ -144,15 +174,15 @@ fun HomeScreen(
                             subtitle = if (uiState.autoSigninEnabled) "已开启" else "未开启",
                             icon = Icons.Default.HowToReg,
                             color = MaterialTheme.colorScheme.primary,
-                            onClick = { onNavigateToTab(1) },
+                            onClick = { onNavigateToFeature("signin") },
                             modifier = Modifier.weight(1f)
                         )
                         QuickActionItem(
-                            title = "火花自动化",
-                            subtitle = "定时续火花",
+                            title = "抖音续火花",
+                            subtitle = "自动互动",
                             icon = Icons.Default.ElectricBolt,
-                            color = MaterialTheme.colorScheme.tertiary,
-                            onClick = { onNavigateToTab(3) },
+                            color = Color(0xFFE65100),
+                            onClick = { onNavigateToFeature("spark") },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -160,12 +190,18 @@ fun HomeScreen(
 
                 // 今日课程 / 待签到列表
                 item {
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                     SectionHeader(
                         title = "今日课程签到",
                         action = {
-                            TextButton(onClick = { onNavigateToTab(1) }) {
-                                Text("查看全部")
+                            TextButton(onClick = { onNavigateToFeature("signin") }) {
+                                Text(
+                                    text = "查看全部",
+                                    style = MaterialTheme.typography.labelLarge.copy(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                )
                             }
                         }
                     )
@@ -176,11 +212,12 @@ fun HomeScreen(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            shape = RoundedCornerShape(16.dp),
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(18.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                            )
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                         ) {
                             Box(
                                 modifier = Modifier
@@ -189,13 +226,21 @@ fun HomeScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(
-                                        imageVector = Icons.Default.EventBusy,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.outline,
-                                        modifier = Modifier.size(40.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(52.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.EventAvailable,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.outline,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(10.dp))
                                     Text(
                                         text = "今日暂无课程安排或尚未同步",
                                         style = MaterialTheme.typography.bodyMedium,
@@ -222,17 +267,21 @@ private fun StatCard(
     target: Int,
     unit: String,
     icon: ImageVector,
+    iconColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val progress = if (target > 0) (count.toFloat() / target).coerceIn(0f, 1f) else 0f
+
     Card(
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(18.dp))
             .clickable { onClick() },
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -244,38 +293,50 @@ private fun StatCard(
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(iconColor.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = iconColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     text = "$count",
-                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 26.sp
+                    ),
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = " / $target $unit",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+                    text = "/ $target $unit",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(bottom = 4.dp)
                 )
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             LinearProgressIndicator(
-                progress = { (count.toFloat() / target.coerceAtLeast(1)).coerceIn(0f, 1f) },
+                progress = progress,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
                     .clip(CircleShape),
-                color = MaterialTheme.colorScheme.primary,
+                color = iconColor,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
         }
@@ -287,18 +348,19 @@ private fun QuickActionItem(
     title: String,
     subtitle: String,
     icon: ImageVector,
-    color: androidx.compose.ui.graphics.Color,
+    color: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(18.dp))
             .clickable { onClick() },
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -306,9 +368,9 @@ private fun QuickActionItem(
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(color.copy(alpha = 0.15f)),
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(color.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -322,8 +384,9 @@ private fun QuickActionItem(
             Column {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
@@ -342,8 +405,8 @@ fun TodayCourseCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(16.dp),
+            .padding(horizontal = 16.dp, vertical = 5.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
@@ -358,16 +421,14 @@ fun TodayCourseCard(
             Column(
                 modifier = Modifier.weight(1f)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = item.courseName,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                Text(
+                    text = item.courseName,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(

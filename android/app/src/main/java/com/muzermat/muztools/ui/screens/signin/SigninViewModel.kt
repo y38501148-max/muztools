@@ -82,8 +82,23 @@ class SigninViewModel(
         }
     }
 
+    fun requestFeature(feature: String) {
+        viewModelScope.launch {
+            val res = apiClient.requestFeature(feature)
+            res.fold(
+                onSuccess = { resp ->
+                    _messageFlow.emit(resp.message ?: "已提交申请")
+                    loadData(isRefresh = true)
+                },
+                onFailure = { err ->
+                    _messageFlow.emit(err.message ?: "申请失败")
+                }
+            )
+        }
+    }
+
     fun toggleAutoSignin(enable: Boolean) {
-        val currentStatus = _uiState.value.studentStatus.status
+        val currentStatus = _uiState.value.studentStatus.signinStatus.ifBlank { _uiState.value.studentStatus.approvals.signin }
         val isApproved = currentStatus == "approved" || currentStatus == "已通过"
 
         if (enable && !isApproved) {

@@ -66,7 +66,7 @@ class TdViewModel(
                     isLoading = false,
                     isRefreshing = false,
                     studentId = studentRes.getOrNull()?.studentId.orEmpty(),
-                    studentStatus = studentRes.getOrNull()?.status ?: current.studentStatus,
+                    studentStatus = studentRes.getOrNull()?.let { it.tdStatus.ifBlank { it.approvals.td } } ?: current.studentStatus,
                     tdStatus = tdRes.getOrDefault(current.tdStatus),
                     sunshineStatus = sunshineRes.getOrDefault(current.sunshineStatus)
                 )

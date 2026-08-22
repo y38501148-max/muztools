@@ -12,13 +12,16 @@ from .notify import list_notifications, mark_read
 from .scheduler import start_scheduler
 from .signin_core import perform_duaa_login, safe_fetch_schedule
 from .store import (
+    FEATURE_KEYS,
     authenticate,
     create_session,
     create_user,
     delete_session,
+    ensure_approvals,
     photo_dir,
     public_user,
     save_user,
+    set_feature_approval,
     user_from_token,
 )
 
@@ -45,10 +48,19 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
 
 def require_student(user: dict[str, Any], approved: bool = False) -> dict[str, Any]:
     student = user.get("student") or {}
-    if student.get("status") in {"unbound", ""}:
+    if not student.get("student_id"):
         raise HTTPException(status_code=400, detail="请先绑定统一认证学号")
-    if approved and student.get("status") != "approved":
-        raise HTTPException(status_code=403, detail="学生认证尚未通过审批，无法使用该功能")
+    if approved and student.get("status") not in {"verified", "approved"}:
+        raise HTTPException(status_code=403, detail="请先完成学生认证")
+    return student
+
+
+def require_feature(user: dict[str, Any], feature: str) -> dict[str, Any]:
+    student = require_student(user)
+    ensure_approvals(user)
+    if user.get("approvals", {}).get(feature) != "approved":
+        names = {"signin": "自动签到", "td": "TD", "spark": "抖音续火花"}
+        raise HTTPException(status_code=403, detail=f"{names.get(feature, feature)}尚未通过审批")
     return student
 
 
@@ -156,8 +168,6 @@ async def bind_student(payload: dict[str, Any] = Body(...), user: dict[str, Any]
         uid, sess, real_name, cookies = await perform_duaa_login(student_id, password)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"统一认证失败：{exc}") from exc
-    previous_status = user.get("student", {}).get("status")
-    status = "approved" if previous_status == "approved" else "pending"
     user["student"].update(
         {
             "student_id": student_id,
@@ -166,24 +176,43 @@ async def bind_student(payload: dict[str, Any] = Body(...), user: dict[str, Any]
             "uid": uid,
             "session_id": sess,
             "cookies": cookies,
-            "status": status,
-            "auto_signin": bool(user["student"].get("auto_signin")) if status == "approved" else False,
+            "status": "verified",
         }
     )
+    ensure_approvals(user)
     save_user(user)
-    message = "认证成功，等待管理员审批" if status == "pending" else "认证已更新"
-    return {"success": True, "message": message, "user": public_user(user)}
+    return {"success": True, "message": "学生认证成功，请分别申请自动签到 / TD / 续火花", "user": public_user(user)}
 
 
 @app.get("/api/student")
 async def student_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    student = public_user(user)["student"]
+    payload = public_user(user)
+    student = payload["student"]
+    approvals = payload.get("approvals", {})
     return {
         "status": student.get("status") or "unbound",
         "student_id": student.get("student_id"),
         "display_name": student.get("real_name") or user.get("display_name"),
         "student": student,
+        "approvals": approvals,
+        "signin_status": approvals.get("signin", "none"),
+        "td_status": approvals.get("td", "none"),
+        "spark_status": approvals.get("spark", "none"),
     }
+
+
+@app.post("/api/student/request")
+async def request_feature(payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_student(user)
+    feature = str(payload.get("feature") or "").strip()
+    if feature not in FEATURE_KEYS:
+        raise HTTPException(status_code=400, detail="功能须为 signin / td / spark")
+    current = ensure_approvals(user)["approvals"].get(feature)
+    if current == "approved":
+        return {"success": True, "message": "该功能已通过审批", "user": public_user(user)}
+    set_feature_approval(user, feature, "pending")
+    save_user(user)
+    return {"success": True, "message": "已提交审批申请", "user": public_user(user)}
 
 
 @app.get("/api/signin/schedule")
@@ -191,6 +220,7 @@ async def signin_schedule(user: dict[str, Any] = Depends(current_user)) -> dict[
     from datetime import datetime
     from .signin_core import TZ_BEIJING
 
+    student = require_student(user)
     today = datetime.now(TZ_BEIJING).strftime("%Y%m%d")
     try:
         sched, _auth = await safe_fetch_schedule(student, today)
@@ -225,14 +255,14 @@ async def signin_schedule(user: dict[str, Any] = Depends(current_user)) -> dict[
         "courses": sched,
         "schedule": schedule,
         "enabled": bool(student.get("auto_signin")),
-        "approved": student.get("status") == "approved",
+        "approved": ensure_approvals(user)["approvals"].get("signin") == "approved",
         "auto_signin": bool(student.get("auto_signin")),
     }
 
 
 @app.post("/api/signin/auto")
 async def toggle_auto(payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    student = require_student(user, approved=True)
+    student = require_feature(user, "signin")
     enabled = bool(payload.get("enabled"))
     student["auto_signin"] = enabled
     save_user(user)
@@ -241,7 +271,7 @@ async def toggle_auto(payload: dict[str, Any] = Body(...), user: dict[str, Any] 
 
 @app.get("/api/td/status")
 async def td_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    student = require_student(user, approved=True)
+    student = require_feature(user, "td")
     try:
         rows = await td.query_td_counts(student["student_id"], student["password"])
         latest = td.latest_count(rows)
@@ -269,7 +299,7 @@ async def td_photos(
     exit: UploadFile | None = File(default=None),
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
-    require_student(user, approved=True)
+    require_feature(user, "td")
     folder = photo_dir(user["id"])
     saved = []
     if entrance is not None:
@@ -302,7 +332,7 @@ async def sunshine_status(user: dict[str, Any] = Depends(current_user)) -> dict[
 
 @app.post("/api/douyin/session")
 async def douyin_session(payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    require_student(user, approved=True)
+    require_feature(user, "spark")
     try:
         cookies = normalize_cookies(payload.get("cookies"))
     except Exception as exc:
@@ -315,7 +345,7 @@ async def douyin_session(payload: dict[str, Any] = Body(...), user: dict[str, An
 
 @app.get("/api/douyin/session")
 async def get_douyin_session(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    require_student(user, approved=True)
+    require_feature(user, "spark")
     dy = public_user(user)["douyin"]
     return {
         "valid": bool(dy.get("connected")),
@@ -330,7 +360,7 @@ async def get_douyin_session(user: dict[str, Any] = Depends(current_user)) -> di
 
 @app.put("/api/douyin/config")
 async def douyin_config(payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    require_student(user, approved=True)
+    require_feature(user, "spark")
     cfg = user.setdefault("douyin", {})
     if "enabled" in payload:
         cfg["enabled"] = bool(payload.get("enabled"))
@@ -351,7 +381,7 @@ async def douyin_config(payload: dict[str, Any] = Body(...), user: dict[str, Any
 
 @app.post("/api/douyin/run")
 async def douyin_run(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    require_student(user, approved=True)
+    require_feature(user, "spark")
     try:
         result = run_spark(user)
     except Exception as exc:

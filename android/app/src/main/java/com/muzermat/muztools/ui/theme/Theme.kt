@@ -30,7 +30,8 @@ private val LightColorScheme = lightColorScheme(
     onSurface = OnSurfaceLight,
     surfaceVariant = SurfaceVariantLight,
     onSurfaceVariant = OnSurfaceVariantLight,
-    outline = OutlineLight
+    outline = OutlineLight,
+    outlineVariant = OutlineVariantLight
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -52,13 +53,14 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = OnSurfaceDark,
     surfaceVariant = SurfaceVariantDark,
     onSurfaceVariant = OnSurfaceVariantDark,
-    outline = OutlineDark
+    outline = OutlineDark,
+    outlineVariant = OutlineVariantDark
 )
 
 @Composable
 fun MuzToolsTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false, // 默认使用统一的校园蓝调 Material 3 配色
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -75,7 +77,11 @@ fun MuzToolsTheme(
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.background.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            window.navigationBarColor = colorScheme.surface.toArgb()
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
         }
     }
 
