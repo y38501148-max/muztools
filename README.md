@@ -64,12 +64,6 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-安装包输出在 `android/app/build/outputs/apk/debug/`。客户端默认连接外网 API `http://150.138.79.9:10023`（映射到 Server2 的 18787），界面不展示该地址。
-
-## Server2 部署
-
-见 [docs/deploy.md](docs/deploy.md)。部署时会关闭 astrbot，并停止旧 `duaa` 守护进程；旧 QQ 白名单不迁移。
-
 ## 热更新
 
 后端保存当前客户端版本。App 启动后会检查 `/api/app/version`，有新版本则弹出更新说明并下载安装。当前客户端为 `v1.1.1`。
