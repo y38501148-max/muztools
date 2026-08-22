@@ -6,8 +6,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.muzermat.muztools.data.api.ApiClient
 import com.muzermat.muztools.data.model.SunshineStatusResponse
-import com.muzermat.muztools.data.model.TdManualRequest
 import com.muzermat.muztools.data.model.TdStatusResponse
+import com.muzermat.muztools.data.td.TdClient
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,12 +18,12 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.io.File
-import java.io.FileOutputStream
+import kotlinx.coroutines.withContext
 
 data class TdUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
+    val studentId: String = "",
     val tdStatus: TdStatusResponse = TdStatusResponse(),
     val sunshineStatus: SunshineStatusResponse = SunshineStatusResponse(),
     val selectedCampus: String = "学院路",
@@ -32,7 +33,6 @@ data class TdUiState(
     val entrancePhotoUri: Uri? = null,
     val exitPhotoUri: Uri? = null,
     val isSubmittingManual: Boolean = false,
-    val isUploadingPhotos: Boolean = false
 )
 
 class TdViewModel(
@@ -51,9 +51,11 @@ class TdViewModel(
                 if (isRefresh) it.copy(isRefreshing = true) else it.copy(isLoading = true)
             }
 
+            val studentDeferred = async { apiClient.getStudentStatus() }
             val tdDeferred = async { apiClient.getTdStatus() }
             val sunshineDeferred = async { apiClient.getSunshineStatus() }
 
+            val studentRes = studentDeferred.await()
             val tdRes = tdDeferred.await()
             val sunshineRes = sunshineDeferred.await()
 
@@ -61,6 +63,7 @@ class TdViewModel(
                 current.copy(
                     isLoading = false,
                     isRefreshing = false,
+                    studentId = studentRes.getOrNull()?.studentId.orEmpty(),
                     tdStatus = tdRes.getOrDefault(current.tdStatus),
                     sunshineStatus = sunshineRes.getOrDefault(current.sunshineStatus)
                 )
@@ -73,7 +76,7 @@ class TdViewModel(
     }
 
     fun setGapMinutes(minutes: Int) {
-        _uiState.update { it.copy(gapMinutes = minutes.coerceIn(1, 60)) }
+        _uiState.update { it.copy(gapMinutes = minutes.coerceIn(1, 15)) }
     }
 
     fun setEntrancePhoto(uri: Uri?) {
@@ -84,71 +87,53 @@ class TdViewModel(
         _uiState.update { it.copy(exitPhotoUri = uri) }
     }
 
-    fun uploadPhotos(context: Context) {
-        val entranceUri = _uiState.value.entrancePhotoUri
-        val exitUri = _uiState.value.exitPhotoUri
-
-        if (entranceUri == null && exitUri == null) {
-            viewModelScope.launch { _messageFlow.emit("请先选择至少一张打卡机照片") }
+    fun submitManualTd(context: Context) {
+        val state = _uiState.value
+        if (state.studentId.isBlank()) {
+            viewModelScope.launch { _messageFlow.emit("请先绑定统一认证学号") }
+            return
+        }
+        val entranceUri = state.entrancePhotoUri
+        val exitUri = state.exitPhotoUri
+        if (entranceUri == null || exitUri == null) {
+            viewModelScope.launch { _messageFlow.emit("请先在本机选择入口图和出口图") }
             return
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isUploadingPhotos = true) }
-            val entranceFile = entranceUri?.let { uriToFile(context, it, "entrance.jpg") }
-            val exitFile = exitUri?.let { uriToFile(context, it, "exit.jpg") }
-
-            val res = apiClient.postTdPhotos(entranceFile, exitFile)
-            _uiState.update { it.copy(isUploadingPhotos = false) }
-
-            res.fold(
-                onSuccess = { resp ->
-                    _messageFlow.emit(resp.message ?: "照片上传识别成功")
-                },
-                onFailure = { err ->
-                    _messageFlow.emit("照片上传失败: ${err.message}")
-                }
-            )
-        }
-    }
-
-    fun submitManualTd() {
-        val state = _uiState.value
-        viewModelScope.launch {
             _uiState.update { it.copy(isSubmittingManual = true) }
-            val req = TdManualRequest(
-                campus = state.selectedCampus,
-                entranceMachineId = state.entranceMachineId.ifBlank { null },
-                exitMachineId = state.exitMachineId.ifBlank { null },
-                gapSeconds = state.gapMinutes * 60
-            )
-
-            val res = apiClient.postTdManual(req)
-            _uiState.update { it.copy(isSubmittingManual = false) }
-
-            res.fold(
-                onSuccess = { resp ->
-                    _messageFlow.emit(resp.message ?: "手动打卡任务已触发")
-                    loadData(isRefresh = true)
-                },
-                onFailure = { err ->
-                    _messageFlow.emit("打卡失败: ${err.message}")
-                }
-            )
-        }
-    }
-
-    private fun uriToFile(context: Context, uri: Uri, fileName: String): File? {
-        return try {
-            val file = File(context.cacheDir, fileName)
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(file).use { output ->
-                    input.copyTo(output)
+            val result = runCatching {
+                val entrancePhoto = readBytes(context, entranceUri)
+                val exitPhoto = readBytes(context, exitUri)
+                withContext(Dispatchers.IO) {
+                    TdClient.manualCheck(
+                        studentId = state.studentId,
+                        campus = state.selectedCampus,
+                        entrancePhoto = entrancePhoto,
+                        exitPhoto = exitPhoto,
+                        gapSeconds = state.gapMinutes * 60,
+                        entranceMachineId = state.entranceMachineId.toIntOrNull(),
+                        exitMachineId = state.exitMachineId.toIntOrNull(),
+                    )
                 }
             }
-            file
-        } catch (e: Exception) {
-            null
+            _uiState.update { it.copy(isSubmittingManual = false) }
+            result.fold(
+                onSuccess = { td ->
+                    _messageFlow.emit(td.message + (td.count?.let { "，当前次数 $it" } ?: ""))
+                    if (td.success) loadData(isRefresh = true)
+                },
+                onFailure = { err ->
+                    _messageFlow.emit(
+                        "打卡失败: ${err.message ?: err.javaClass.simpleName}。请确认手机已连校园网。"
+                    )
+                }
+            )
         }
+    }
+
+    private fun readBytes(context: Context, uri: Uri): ByteArray {
+        return context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: error("无法读取照片")
     }
 }

@@ -243,21 +243,7 @@ fun TdScreen(
             // 打卡机二维码/实景照片上传 (入口/出口)
             item {
                 Spacer(modifier = Modifier.height(12.dp))
-                SectionHeader(
-                    title = "打卡机图片配置",
-                    action = {
-                        TextButton(
-                            onClick = { viewModel.uploadPhotos(context) },
-                            enabled = !uiState.isUploadingPhotos && (uiState.entrancePhotoUri != null || uiState.exitPhotoUri != null)
-                        ) {
-                            if (uiState.isUploadingPhotos) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            } else {
-                                Text("上传并保存")
-                            }
-                        }
-                    }
-                )
+                SectionHeader(title = "打卡机图片（仅本机使用）")
 
                 Row(
                     modifier = Modifier
@@ -285,13 +271,19 @@ fun TdScreen(
             // 手动触发打卡
             item {
                 Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "手动 TD 由手机直接连接 10.212.28.38:8888，请先连校园网。照片不会上传到服务器。默认伪装 4 分钟。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                 ) {
                     Button(
-                        onClick = { viewModel.submitManualTd() },
+                        onClick = { viewModel.submitManualTd(context) },
                         enabled = !uiState.isSubmittingManual,
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
@@ -309,7 +301,7 @@ fun TdScreen(
                         } else {
                             Icon(imageVector = Icons.Default.DirectionsRun, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("立即执行手动 TD 打卡", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("本机发起手动 TD", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

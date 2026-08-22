@@ -269,34 +269,8 @@ async def td_photos(
 
 @app.post("/api/td/manual")
 async def td_manual(payload: dict[str, Any] = Body(default={}), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    student = require_student(user)
-    campus_raw = str(payload.get("campus") or user.get("td", {}).get("campus") or "xueyuanlu")
-    campus = {"学院路": "xueyuanlu", "沙河": "shahe"}.get(campus_raw, campus_raw)
-    if campus not in {"xueyuanlu", "shahe"}:
-        campus = "xueyuanlu"
-    machines = td.campus_machines(campus)
-    def _machine_id(value, fallback):
-        try:
-            if value in (None, ""):
-                return fallback
-            return int(value)
-        except (TypeError, ValueError):
-            return fallback
-    entrance_id = _machine_id(payload.get("entrance_machine_id"), machines["entrance"][0]["id"])
-    exit_id = _machine_id(payload.get("exit_machine_id"), machines["exit"][0]["id"])
-    gap = int(payload.get("gap_seconds") or user.get("td", {}).get("gap_seconds") or 240)
-    folder = photo_dir(user["id"])
-    entrance_photo = (folder / "entrance.jpg").read_bytes() if (folder / "entrance.jpg").exists() else b""
-    exit_photo = (folder / "exit.jpg").read_bytes() if (folder / "exit.jpg").exists() else b""
-    user["td"].update({"campus": campus, "gap_seconds": gap, "entrance_machine_id": entrance_id, "exit_machine_id": exit_id})
-    save_user(user)
-    try:
-        result = td.manual_td(student["student_id"], entrance_id, exit_id, entrance_photo, exit_photo, gap)
-    except OSError as exc:
-        raise HTTPException(status_code=400, detail=f"无法连接 TD 服务器，需校园网或 EasyConnect：{exc}") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return result
+    _ = (payload, user)
+    raise HTTPException(status_code=400, detail="手动 TD 需在校园网由手机端直接向 TD 服务器发起，后端不再代发")
 
 
 @app.get("/api/sunshine/status")
