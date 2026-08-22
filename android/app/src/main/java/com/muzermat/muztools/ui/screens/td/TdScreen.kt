@@ -279,7 +279,7 @@ fun TdScreen(
             item {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "手动 TD 由手机直接连接 10.212.28.38:8888，请先连校园网。照片不会上传到服务器。默认伪装 4 分钟。",
+                    text = "手动 TD 由本机在校园网直连打卡机发起，照片不会上传。默认伪装 4 分钟。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)

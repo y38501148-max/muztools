@@ -141,3 +141,16 @@ data class GenericApiResponse(
     val message: String? = null,
     val detail: String? = null
 )
+
+
+@Serializable
+data class AppVersion(
+    val version: String = "1.0.0",
+    @SerialName("version_code") val versionCode: Int = 1,
+    @SerialName("min_version_code") val minVersionCode: Int = 1,
+    val force: Boolean = false,
+    val title: String = "",
+    val message: String = "",
+    @SerialName("apk_url") val apkUrl: String = "",
+    @SerialName("updated_at") val updatedAt: String = ""
+)

@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import sunshine, td
+from . import appver, sunshine, td
 from .config import ensure_dirs
 from .douyin import normalize_cookies, run_spark
 from .notify import list_notifications, mark_read
@@ -55,12 +55,29 @@ def require_student(user: dict[str, Any], approved: bool = False) -> dict[str, A
 @app.on_event("startup")
 async def on_startup() -> None:
     ensure_dirs()
+    appver.load_version()
     start_scheduler()
 
 
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/app/version")
+async def app_version() -> dict[str, Any]:
+    return appver.public_version()
+
+
+@app.get("/api/app/apk")
+async def app_apk():
+    from fastapi.responses import FileResponse
+
+    path = appver.apk_path()
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="尚未上传安装包")
+    return FileResponse(path, filename=path.name, media_type="application/vnd.android.package-archive")
+
 
 
 @app.post("/api/auth/register")

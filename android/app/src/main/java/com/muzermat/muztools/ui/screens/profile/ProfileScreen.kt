@@ -30,8 +30,6 @@ fun ProfileScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showLogoutDialog by remember { mutableStateOf(false) }
-    var showServerDialog by remember { mutableStateOf(false) }
-    var tempServerUrl by remember { mutableStateOf(uiState.serverUrl) }
 
     LaunchedEffect(Unit) {
         viewModel.loadData()
@@ -225,38 +223,8 @@ fun ProfileScreen(
                 }
             }
 
-            // 服务器设置与退出登录
+            // 退出登录
             item {
-                Spacer(modifier = Modifier.height(16.dp))
-                SectionHeader(title = "系统设置")
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("后端 API 地址", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
-                                Text(uiState.serverUrl, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            TextButton(onClick = {
-                                tempServerUrl = uiState.serverUrl
-                                showServerDialog = true
-                            }) {
-                                Text("修改")
-                            }
-                        }
-                    }
-                }
-
                 Spacer(modifier = Modifier.height(20.dp))
                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                     OutlinedButton(
@@ -301,77 +269,5 @@ fun ProfileScreen(
                 }
             }
         )
-    }
-
-    if (showServerDialog) {
-        AlertDialog(
-            onDismissRequest = { showServerDialog = false },
-            title = { Text("修改服务器地址") },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = tempServerUrl,
-                        onValueChange = { tempServerUrl = it },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.updateServerUrl(tempServerUrl)
-                    showServerDialog = false
-                }) {
-                    Text("保存")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showServerDialog = false }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-fun NotificationCard(
-    item: NotificationItem,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = item.title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary
-                )
-                item.createdAt?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = item.content,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
     }
 }

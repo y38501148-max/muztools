@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -20,6 +21,8 @@ import com.muzermat.muztools.ui.screens.signin.SigninViewModel
 import com.muzermat.muztools.ui.screens.spark.SparkViewModel
 import com.muzermat.muztools.ui.screens.td.TdViewModel
 import com.muzermat.muztools.ui.theme.MuzToolsTheme
+import com.muzermat.muztools.update.UpdateDialog
+import com.muzermat.muztools.update.UpdateViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -77,6 +80,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val updateViewModel: UpdateViewModel by viewModels {
+        val app = application as MuzApplication
+        object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                @Suppress("UNCHECKED_CAST")
+                return UpdateViewModel(app.apiClient) as T
+            }
+        }
+    }
+
     private val profileViewModel: ProfileViewModel by viewModels {
         val app = application as MuzApplication
         object : ViewModelProvider.Factory {
@@ -99,6 +112,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MuzToolsTheme {
+                LaunchedEffect(Unit) { updateViewModel.check() }
                 AppNavigation(
                     authViewModel = authViewModel,
                     homeViewModel = homeViewModel,
@@ -107,6 +121,7 @@ class MainActivity : ComponentActivity() {
                     sparkViewModel = sparkViewModel,
                     profileViewModel = profileViewModel
                 )
+                UpdateDialog(updateViewModel)
             }
         }
     }

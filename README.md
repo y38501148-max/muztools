@@ -65,6 +65,16 @@ cd android
 
 见 [docs/deploy.md](docs/deploy.md)。部署时会关闭 astrbot，并停止旧 `duaa` 守护进程；旧 QQ 白名单不迁移。
 
+## 热更新
+
+后端保存当前客户端版本，默认 `v1.0.0`。App 启动后会检查 `/api/app/version`，有新版本则弹出更新说明并下载安装。
+
+```bash
+muz-admin version
+muz-admin set-version 1.0.1 --code 2 --title "版本更新" --message "修复说明" --apk /path/to/app.apk
+muz-admin set-version 1.0.1 --code 2 --force --message "必须更新"
+```
+
 ## 说明
 
 - TD 次数 / 阳光次数通过 WebVPN 查询

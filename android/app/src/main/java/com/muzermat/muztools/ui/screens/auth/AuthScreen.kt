@@ -10,7 +10,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -36,8 +35,6 @@ fun AuthScreen(
     val uiState by viewModel.uiState.collectAsState()
     var isRegisterMode by remember { mutableStateOf(false) }
     var passwordVisible by remember { mutableStateOf(false) }
-    var showServerDialog by remember { mutableStateOf(false) }
-    var tempServerUrl by remember { mutableStateOf(viewModel.serverUrl) }
 
     val focusManager = LocalFocusManager.current
     val scrollState = rememberScrollState()
@@ -52,18 +49,6 @@ fun AuthScreen(
         topBar = {
             TopAppBar(
                 title = { },
-                actions = {
-                    IconButton(onClick = {
-                        tempServerUrl = viewModel.serverUrl
-                        showServerDialog = true
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "服务器设置",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 )
@@ -273,51 +258,7 @@ fun AuthScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = "服务器: ${viewModel.serverUrl}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
             }
         }
-    }
-
-    if (showServerDialog) {
-        AlertDialog(
-            onDismissRequest = { showServerDialog = false },
-            title = { Text("配置服务器地址") },
-            text = {
-                Column {
-                    Text(
-                        text = "请输入后端 API 地址 (如 http://150.138.79.9:18787):",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = tempServerUrl,
-                        onValueChange = { tempServerUrl = it },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.updateServerUrl(tempServerUrl)
-                        showServerDialog = false
-                    }
-                ) {
-                    Text("保存")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showServerDialog = false }) {
-                    Text("取消")
-                }
-            }
-        )
     }
 }

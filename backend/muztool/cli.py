@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from .config import DATA_DIR, ensure_dirs
+from . import appver
 from .store import iter_users, public_user, resolve_user, save_user
 
 
@@ -112,6 +113,33 @@ def cmd_enable_signin(args: argparse.Namespace) -> None:
     print(f"已开启 {user['username']} 的自动签到")
 
 
+
+def cmd_version(_: argparse.Namespace) -> None:
+    _print(appver.load_version())
+
+
+def cmd_set_version(args: argparse.Namespace) -> None:
+    payload = {
+        "version": args.version.lstrip("vV"),
+        "version_code": args.code,
+        "force": bool(args.force),
+        "title": args.title or f"更新到 v{args.version.lstrip('vV')}",
+        "message": args.message or "",
+    }
+    if args.min_code is not None:
+        payload["min_version_code"] = args.min_code
+    if args.apk:
+        from pathlib import Path
+        src = Path(args.apk).expanduser().resolve()
+        if not src.exists():
+            raise SystemExit(f"找不到安装包: {src}")
+        dest = appver.apk_path(src.name)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(src.read_bytes())
+        payload["apk_name"] = src.name
+    data = appver.save_version(payload)
+    _print(data)
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="muz-admin",
@@ -146,6 +174,20 @@ def build_parser() -> argparse.ArgumentParser:
     enable = sub.add_parser("enable-signin", help="开启该用户的自动签到（需已审批）")
     enable.add_argument("user")
     enable.set_defaults(func=cmd_enable_signin)
+
+    version = sub.add_parser("version", help="查看当前客户端版本配置")
+    version.set_defaults(func=cmd_version)
+
+    set_version = sub.add_parser("set-version", help="发布新的客户端版本（热更新）")
+    set_version.add_argument("version", help="版本号，如 1.0.1")
+    set_version.add_argument("--code", type=int, required=True, help="递增的 versionCode")
+    set_version.add_argument("--min-code", type=int, dest="min_code", help="最低允许的 versionCode，低于此值强制更新")
+    set_version.add_argument("--title", default="", help="更新弹窗标题")
+    set_version.add_argument("--message", default="", help="更新说明")
+    set_version.add_argument("--apk", default="", help="新安装包路径")
+    set_version.add_argument("--force", action="store_true", help="强制更新，不可跳过")
+    set_version.set_defaults(func=cmd_set_version)
+
     return parser
 
 

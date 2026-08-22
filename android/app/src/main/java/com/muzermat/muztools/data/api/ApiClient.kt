@@ -194,6 +194,27 @@ class ApiClient(private val prefs: PreferencesManager) {
 
     suspend fun runDouyinSpark(): Result<GenericApiResponse> =
         executePost("/api/douyin/run", emptyMap<String, String>())
+
+    suspend fun getAppVersion(): Result<AppVersion> =
+        executeGet("/api/app/version")
+
+    suspend fun downloadApk(relativeOrAbsolute: String, dest: File): Result<File> = withContext(Dispatchers.IO) {
+        val url = if (relativeOrAbsolute.startsWith("http")) relativeOrAbsolute else getFullUrl(relativeOrAbsolute.ifBlank { "/api/app/apk" })
+        val request = Request.Builder().url(url).get().build()
+        val client = okHttpClient.newBuilder().readTimeout(5, TimeUnit.MINUTES).writeTimeout(5, TimeUnit.MINUTES).build()
+        try {
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(ApiException(response.code, response.body?.string().orEmpty().ifBlank { response.message }))
+            }
+            response.body?.byteStream()?.use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            } ?: return@withContext Result.failure(IOException("安装包为空"))
+            Result.success(dest)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
 class ApiException(val code: Int, override val message: String) : IOException("HTTP $code: $message")
