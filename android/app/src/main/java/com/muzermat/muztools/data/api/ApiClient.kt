@@ -55,8 +55,8 @@ class ApiClient(private val prefs: PreferencesManager) {
 
     private fun longClient(): OkHttpClient = okHttpClient.newBuilder()
         .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(45, TimeUnit.SECONDS)
-        .writeTimeout(45, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
 

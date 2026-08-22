@@ -103,13 +103,14 @@ class SparkViewModel(
             val res = apiClient.startDouyinQr()
             res.fold(
                 onSuccess = { qr ->
+                    val ready = qr.qrImage.isNotBlank() || qr.status in listOf("failed", "expired", "cancelled", "success")
                     _uiState.update {
                         it.copy(
                             qrLoginId = qr.loginId,
                             qrImage = qr.qrImage,
                             qrStatus = qr.status,
                             qrError = qr.error,
-                            qrLoading = false
+                            qrLoading = !ready && qr.qrImage.isBlank()
                         )
                     }
                     if (qr.status == "success" || qr.valid) {
@@ -135,7 +136,8 @@ class SparkViewModel(
                 it.copy(
                     qrImage = qr.qrImage.ifBlank { it.qrImage },
                     qrStatus = qr.status,
-                    qrError = qr.error
+                    qrError = qr.error,
+                    qrLoading = qr.qrImage.ifBlank { it.qrImage }.isBlank() && qr.status !in listOf("failed", "expired", "cancelled", "success")
                 )
             }
             if (qr.status == "success" || qr.valid) {
