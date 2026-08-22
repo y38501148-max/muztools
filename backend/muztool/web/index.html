@@ -6,168 +6,192 @@
   <title>盐的工具箱</title>
   <style>
     :root {
-      --bg: #101318;
-      --surface: #181c22;
-      --card: #1e242c;
-      --line: #2a313b;
-      --text: #eef2f6;
-      --muted: #9aa4b2;
-      --accent: #7aa2ff;
-      --orange: #e65100;
-      --ok: #3dbe7a;
-      --err: #ef6b6b;
-      --pending: #e0b44a;
+      --primary: #1e60d5;
+      --primary-soft: #e8f0fe;
+      --primary-deep: #0f3b8f;
+      --bg: #f6f8fc;
+      --card: #ffffff;
+      --text: #181c20;
+      --muted: #535d6e;
+      --line: #e3e8f0;
+      --ok: #1e8e3e;
+      --ok-bg: #e8f7ee;
+      --warn: #b45309;
+      --warn-bg: #fff4d6;
+      --err: #d93025;
+      --err-bg: #fdecea;
+      --spark: #e65100;
+      --td: #0288d1;
+      --shadow: 0 10px 30px rgba(24, 44, 84, .08);
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif; }
+    body { padding-bottom: env(safe-area-inset-bottom); }
     button, input, select, textarea { font: inherit; }
     button { cursor: pointer; }
-    a { color: var(--accent); }
+    a { color: var(--primary); }
     .hidden { display: none !important; }
-    .wrap { max-width: 720px; margin: 0 auto; padding: 16px 16px 96px; }
-    h1, h2, h3 { margin: 0; }
-    .muted { color: var(--muted); }
-    .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 16px; margin: 10px 0; }
+    .app-shell { max-width: 760px; margin: 0 auto; min-height: 100vh; position: relative; }
+    .page { padding: 18px 18px 110px; }
+    h1 { font-size: 28px; margin: 8px 0 6px; }
+    h2 { font-size: 22px; margin: 0; }
+    h3 { font-size: 16px; margin: 0 0 8px; }
+    p { margin: 0; }
+    .muted { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .brand { display: flex; gap: 12px; align-items: center; }
+    .logo { width: 42px; height: 42px; border-radius: 14px; background: var(--primary-soft); color: var(--primary); display: grid; place-items: center; font-weight: 800; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 16px; margin: 0 0 12px; box-shadow: var(--shadow); }
+    .card.click { cursor: pointer; }
+    .card.click:hover { border-color: #c9d7f3; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .row { display: flex; gap: 10px; align-items: center; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .btn { border: 0; border-radius: 12px; padding: 10px 14px; background: var(--accent); color: #0b1220; font-weight: 700; }
-    .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+    .stack { display: grid; gap: 10px; }
+    .btn { border: 0; border-radius: 14px; padding: 11px 14px; background: var(--primary); color: #fff; font-weight: 700; }
+    .btn.soft { background: var(--primary-soft); color: var(--primary-deep); }
+    .btn.ghost { background: #fff; color: var(--text); border: 1px solid var(--line); }
     .btn.wide { width: 100%; }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
-    input, textarea, select { width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
-    textarea { min-height: 90px; }
-    .badge { font-size: 12px; padding: 3px 8px; border-radius: 999px; background: #2a313b; color: var(--muted); }
-    .badge.ok { background: #163524; color: var(--ok); }
-    .badge.warn { background: #3a3016; color: var(--pending); }
-    .badge.err { background: #3a1b1b; color: var(--err); }
-    .nav { position: fixed; left: 0; right: 0; bottom: 0; background: #161a20; border-top: 1px solid var(--line); display: flex; }
-    .nav button { flex: 1; background: none; border: 0; color: var(--muted); padding: 10px 0 14px; }
-    .nav button.active { color: var(--accent); font-weight: 700; }
-    .toast { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); background: #222; border: 1px solid var(--line); padding: 10px 14px; border-radius: 12px; z-index: 20; }
-    .qr { width: 240px; height: 240px; background: #fff; border-radius: 16px; margin: 12px auto; object-fit: contain; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    input, textarea, select { width: 100%; background: #fff; color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 11px 12px; }
+    textarea { min-height: 110px; resize: vertical; }
+    label { display: block; margin: 10px 0 6px; color: var(--muted); font-size: 13px; }
+    .badge { font-size: 12px; padding: 3px 8px; border-radius: 999px; background: var(--primary-soft); color: var(--primary-deep); font-weight: 700; }
+    .badge.ok { background: var(--ok-bg); color: var(--ok); }
+    .badge.warn { background: var(--warn-bg); color: var(--warn); }
+    .badge.err { background: var(--err-bg); color: var(--err); }
+    .badge.gray { background: #eef2f8; color: var(--muted); }
+    .nav { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(760px, 100%); background: rgba(255,255,255,.94); backdrop-filter: blur(14px); border-top: 1px solid var(--line); display: flex; padding-bottom: env(safe-area-inset-bottom); }
+    .nav button { flex: 1; background: none; border: 0; color: var(--muted); padding: 10px 0 12px; font-weight: 600; }
+    .nav button.active { color: var(--primary); }
+    .toast { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); background: #182033; color: #fff; padding: 10px 14px; border-radius: 14px; z-index: 30; box-shadow: var(--shadow); max-width: 86%; }
+    .hero { background: linear-gradient(135deg, #1e60d5, #4c8dff); color: #fff; border-radius: 26px; padding: 22px; margin-bottom: 14px; box-shadow: 0 16px 40px rgba(30,96,213,.25); }
+    .hero .muted { color: rgba(255,255,255,.82); }
+    .stat { background: #fff; border-radius: 18px; padding: 14px; }
+    .stat b { font-size: 24px; display: block; margin-top: 4px; }
+    .icon { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font-size: 20px; flex: none; }
+    .list { display: grid; gap: 0; }
+    .list-item { padding: 12px 0; border-top: 1px solid var(--line); }
+    .list-item:first-child { border-top: 0; padding-top: 4px; }
+    .qr { width: 240px; height: 240px; background: #fff; border-radius: 20px; margin: 12px auto; object-fit: contain; box-shadow: var(--shadow); display: block; }
     .center { text-align: center; }
-    label { display: block; margin: 8px 0 6px; color: var(--muted); font-size: 13px; }
-    .list-item { padding: 10px 0; border-top: 1px solid var(--line); }
+    .empty { padding: 18px 8px; color: var(--muted); text-align: center; }
+    .auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: linear-gradient(180deg, #eaf1ff 0%, #f6f8fc 42%); }
+    .auth-card { width: min(430px, 100%); }
+    .busy { opacity: .7; pointer-events: none; }
   </style>
 </head>
 <body>
   <div id="toast" class="toast hidden"></div>
-
-  <section id="auth" class="wrap">
-    <div class="top"><h1>盐的工具箱</h1></div>
-    <p class="muted">登录后使用自动签到、TD / 阳光和抖音续火花</p>
-    <div class="card">
-      <label>用户名</label>
-      <input id="auth-user" autocomplete="username" />
-      <div id="auth-nick-wrap">
-        <label>显示名</label>
-        <input id="auth-nick" />
+  <div class="app-shell">
+    <section id="auth" class="auth-wrap">
+      <div class="auth-card">
+        <div class="brand"><div class="logo">盐</div><div><h1>盐的工具箱</h1><p class="muted">自动签到 · TD / 阳光 · 抖音续火花</p></div></div>
+        <div class="card" style="margin-top:18px">
+          <label>用户名</label>
+          <input id="auth-user" autocomplete="username" placeholder="6～18 位字母、数字或下划线" />
+          <div id="auth-nick-wrap" class="hidden">
+            <label>显示名</label>
+            <input id="auth-nick" placeholder="同学怎么称呼你" />
+          </div>
+          <label>密码</label>
+          <input id="auth-pass" type="password" autocomplete="current-password" placeholder="须含数字、大写和小写字母" />
+          <button class="btn wide" id="auth-submit" style="margin-top:16px">登录</button>
+          <p class="center muted" style="margin-top:12px"><a href="#/register" id="auth-switch">没有账号？去注册</a></p>
+        </div>
       </div>
-      <label>密码</label>
-      <input id="auth-pass" type="password" autocomplete="current-password" />
-      <p class="muted">6～18 位。注册时须含数字、大写和小写字母</p>
-      <button class="btn wide" id="auth-submit">登录</button>
-      <p class="center"><a href="#" id="auth-switch">没有账号？去注册</a></p>
-    </div>
-  </section>
+    </section>
 
-  <section id="app" class="hidden">
-    <div class="wrap" id="page-home"></div>
-    <div class="wrap hidden" id="page-features"></div>
-    <div class="wrap hidden" id="page-profile"></div>
-    <div class="wrap hidden" id="page-signin"></div>
-    <div class="wrap hidden" id="page-td"></div>
-    <div class="wrap hidden" id="page-spark"></div>
-    <nav class="nav">
-      <button data-tab="home" class="active">首页</button>
-      <button data-tab="features">功能</button>
-      <button data-tab="profile">我的</button>
-    </nav>
-  </section>
+    <section id="app" class="hidden">
+      <div class="page" id="view"></div>
+      <nav class="nav" id="tabbar">
+        <button data-route="home" class="active">首页</button>
+        <button data-route="features">功能</button>
+        <button data-route="profile">我的</button>
+      </nav>
+    </section>
+  </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { token: localStorage.getItem("muz_token") || "", user: null, mode: "login", tab: "home" };
+const state = { token: localStorage.getItem("muz_token") || "", user: null, student: {}, home: {}, notes: [], route: "home" };
 
 function toast(msg) {
   const el = $("toast");
   el.textContent = msg;
   el.classList.remove("hidden");
-  setTimeout(() => el.classList.add("hidden"), 2400);
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.add("hidden"), 2600);
 }
+function esc(v) { return String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
 function badge(status) {
-  const map = { approved: ["ok","已通过"], pending: ["warn","待审批"], verified: ["ok","已认证"], unbound: ["","未绑定"], signed: ["ok","已签"], none: ["","未申请"] };
-  const [cls, text] = map[status] || ["", status || "未知"];
-  return `<span class="badge ${cls}">${text}</span>`;
+  const map = {
+    approved: ["ok","已通过"], pending: ["warn","待审批"], verified: ["ok","已认证"],
+    unbound: ["gray","未绑定"], signed: ["ok","已签"], none: ["gray","未申请"],
+    success: ["ok","成功"], failed: ["err","失败"], scanned: ["warn","已扫码"]
+  };
+  const [cls, text] = map[status] || ["gray", status || "未知"];
+  return `<span class="badge ${cls}">${esc(text)}</span>`;
 }
 async function api(path, opts = {}) {
   const headers = { "Accept": "application/json", ...(opts.headers || {}) };
   if (state.token) headers.Authorization = "Bearer " + state.token;
   if (opts.body && !(opts.body instanceof FormData) && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  const res = await fetch(path, { ...opts, headers, body: opts.body instanceof FormData || typeof opts.body === "string" ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined });
+  const res = await fetch(path, {
+    ...opts,
+    headers,
+    body: opts.body instanceof FormData || typeof opts.body === "string" ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined
+  });
   const text = await res.text();
   let data = {};
   try { data = text ? JSON.parse(text) : {}; } catch { data = { detail: text }; }
   if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
   return data;
 }
+function route() {
+  const hash = (location.hash || "#/home").replace(/^#\/?/, "");
+  return hash.split("?")[0] || "home";
+}
+function go(name) { location.hash = "#/" + name; }
 
 function showAuth(register) {
-  state.mode = register ? "register" : "login";
   $("auth").classList.remove("hidden");
   $("app").classList.add("hidden");
   $("auth-nick-wrap").classList.toggle("hidden", !register);
   $("auth-submit").textContent = register ? "注册" : "登录";
   $("auth-switch").textContent = register ? "已有账号？去登录" : "没有账号？去注册";
+  $("auth-switch").href = register ? "#/login" : "#/register";
 }
 function showApp() {
   $("auth").classList.add("hidden");
   $("app").classList.remove("hidden");
 }
 
-$("auth-switch").onclick = (e) => { e.preventDefault(); showAuth(state.mode !== "register"); };
+$("auth-switch").onclick = (e) => { e.preventDefault(); go(route() === "register" ? "login" : "register"); };
 $("auth-submit").onclick = async () => {
   try {
     const username = $("auth-user").value.trim();
     const password = $("auth-pass").value;
-    const body = state.mode === "register" ? { username, password, display_name: $("auth-nick").value.trim() || username } : { username, password };
-    const data = await api(state.mode === "register" ? "/api/auth/register" : "/api/auth/login", { method: "POST", body });
+    const isReg = route() === "register";
+    const body = isReg ? { username, password, display_name: $("auth-nick").value.trim() || username } : { username, password };
+    const data = await api(isReg ? "/api/auth/register" : "/api/auth/login", { method: "POST", body });
     state.token = data.token;
     localStorage.setItem("muz_token", data.token);
-    showApp();
-    await refreshAll();
+    go("home");
+    await boot();
   } catch (err) { toast(err.message); }
 };
 
-document.querySelectorAll(".nav button").forEach((btn) => {
-  btn.onclick = () => {
-    state.tab = btn.dataset.tab;
-    document.querySelectorAll(".nav button").forEach((b) => b.classList.toggle("active", b === btn));
-    ["home","features","profile"].forEach((name) => $(`page-${name}`).classList.toggle("hidden", name !== btn.dataset.tab));
-    ["signin","td","spark"].forEach((name) => $(`page-${name}`).classList.add("hidden"));
-  };
-});
+document.getElementById("tabbar").onclick = (e) => {
+  const btn = e.target.closest("button[data-route]");
+  if (btn) go(btn.dataset.route);
+};
 
-function openSub(name) {
-  ["home","features","profile","signin","td","spark"].forEach((id) => $(`page-${id}`).classList.toggle("hidden", id !== name));
-}
-
-async function refreshAll() {
+async function boot() {
+  if (!state.token) { showAuth(route() === "register"); return; }
+  showApp();
   try {
-    const [me, student, home, notes] = await Promise.all([
-      api("/api/me"),
-      api("/api/student").catch(() => ({})),
-      api("/api/home?cached=1").catch(() => ({})),
-      api("/api/notifications").catch(() => []),
-    ]);
-    state.user = me;
-    state.student = student;
-    state.home = home;
-    state.notes = notes.items || notes || [];
-    renderHome();
-    renderFeatures();
-    renderProfile();
+    await refreshAll();
+    await render();
   } catch (err) {
     if (String(err.message).includes("未登录")) {
       localStorage.removeItem("muz_token");
@@ -176,142 +200,130 @@ async function refreshAll() {
     } else toast(err.message);
   }
 }
+async function refreshAll() {
+  const [me, student, home, notes] = await Promise.all([
+    api("/api/me"),
+    api("/api/student").catch(() => ({})),
+    api("/api/home?cached=1").catch(() => ({})),
+    api("/api/notifications").catch(() => [])
+  ]);
+  state.user = me;
+  state.student = student;
+  state.home = home;
+  state.notes = Array.isArray(notes) ? notes : (notes.items || []);
+}
 
-function renderHome() {
-  const u = state.user || {};
-  const s = state.student || {};
-  const h = state.home || {};
-  const td = h.td || {};
-  const sun = h.sunshine || {};
-  const courses = (h.schedule && h.schedule.schedule) || [];
-  $("page-home").innerHTML = `
-    <div class="top"><h2>首页</h2><button class="btn ghost" onclick="refreshAll()">刷新</button></div>
-    <div class="card"><b>${u.display_name || u.username || ""}</b><div class="muted">学号 ${s.student_id || "未绑定"} ${badge(s.status)}</div></div>
-    <div class="grid">
-      <div class="card"><div class="muted">TD 课外锻炼</div><h2>${td.semester_count ?? "-"} / ${td.target_count ?? 32}</h2></div>
-      <div class="card"><div class="muted">阳光体育</div><h2>${sun.count ?? "-"} / ${sun.target_count ?? 16}</h2></div>
+function top(title, right = "") {
+  return `<div class="topbar"><div class="brand"><div class="logo">盐</div><div><h2>${title}</h2><p class="muted">你好，${esc((state.user && (state.user.display_name || state.user.username)) || "同学")}</p></div></div>${right}</div>`;
+}
+function back(title) {
+  return `<div class="topbar"><button class="btn ghost" id="back-btn">返回</button><h2>${title}</h2><button class="btn soft" id="reload-btn">刷新</button></div>`;
+}
+
+function homeView() {
+  const u = state.user || {}, s = state.student || {}, h = state.home || {};
+  const td = h.td || {}, sun = h.sunshine || {};
+  const courses = (h.schedule && (h.schedule.schedule || h.schedule.courses)) || [];
+  return `
+    ${top("盐的工具箱", badge(s.status))}
+    <div class="hero">
+      <p class="muted">今日概览</p>
+      <h2 style="margin:6px 0 14px">校园工具都在这里</h2>
+      <div class="grid">
+        <div class="stat"><span class="muted">TD 课外锻炼</span><b>${td.semester_count ?? "-"} / ${td.target_count ?? 32}</b></div>
+        <div class="stat"><span class="muted">阳光体育</span><b>${sun.count ?? "-"} / ${sun.target_count ?? 16}</b></div>
+      </div>
     </div>
     <div class="grid">
-      <div class="card" onclick="openSub('signin')"><b>自动签到</b><div class="muted">${(u.student && u.student.auto_signin) ? "已开启" : "未开启"}</div></div>
-      <div class="card" onclick="openSub('spark')"><b>抖音续火花</b><div class="muted">${(u.douyin && u.douyin.connected) ? "已登录" : "未登录"}</div></div>
+      <div class="card click" data-go="signin"><h3>自动签到</h3><p class="muted">${u.student && u.student.auto_signin ? "已开启" : "未开启"}</p></div>
+      <div class="card click" data-go="spark"><h3>抖音续火花</h3><p class="muted">${u.douyin && u.douyin.connected ? "已登录" : "未登录"}</p></div>
     </div>
-    <div class="card"><b>今日课程签到</b>${courses.length ? courses.map(c => `<div class="list-item"><b>${c.course_name}</b> ${badge(c.status)}<div class="muted">${c.start_time || ""} ${c.classroom || ""}</div></div>`).join("") : `<p class="muted">暂无课程或课表未加载</p>`}</div>
-  `;
-}
-
-function renderFeatures() {
-  const a = (state.user && state.user.approvals) || {};
-  $("page-features").innerHTML = `
-    <div class="top"><h2>功能</h2></div>
-    ${feat("自动签到", "课表查询与定时自动签到", a.signin, "signin")}
-    ${feat("TD / 阳光", "体育锻炼次数查询与校园网直连打卡", a.td, "td")}
-    ${feat("抖音续火花", "抖音 App 扫码登录，每日自动续火花", a.spark, "spark")}
-  `;
-}
-function feat(title, sub, status, page) {
-  return `<div class="card"><div class="row"><div style="flex:1"><b>${title}</b><div class="muted">${sub}</div></div>${badge(status || "none")}</div>
-    <div class="row" style="margin-top:10px"><button class="btn" onclick="openSub('${page}')">打开</button>
-    <button class="btn ghost" onclick="requestFeature('${page === "spark" ? "spark" : page}')">申请审批</button></div></div>`;
-}
-async function requestFeature(feature) {
-  try {
-    await api("/api/student/request", { method: "POST", body: { feature } });
-    toast("已提交审批");
-    refreshAll();
-  } catch (err) { toast(err.message); }
-}
-
-function renderProfile() {
-  const u = state.user || {};
-  const notes = state.notes || [];
-  $("page-profile").innerHTML = `
-    <div class="top"><h2>个人中心</h2><button class="btn ghost" onclick="logout()">退出</button></div>
-    <div class="card"><b>${u.display_name || u.username}</b><div class="muted">@${u.username || ""}</div></div>
     <div class="card">
-      <b>绑定学号</b>
-      <label>学号</label><input id="sid" value="${(u.student && u.student.student_id) || ""}" />
+      <h3>今日课程签到</h3>
+      ${courses.length ? courses.map(c => `<div class="list-item"><div class="row"><div style="flex:1"><b>${esc(c.course_name || c.courseName || "课程")}</b><p class="muted">${esc(c.start_time || "")} ${esc(c.classroom || "")}</p></div>${badge(c.status)}</div></div>`).join("") : `<div class="empty">暂无课程，或课表还没加载出来</div>`}
+    </div>`;
+}
+
+function featuresView() {
+  const a = (state.user && state.user.approvals) || {};
+  const items = [
+    ["signin", "自动签到", "课表查询与定时自动签到", "常用", "#1e60d5", a.signin, "signin"],
+    ["td", "TD / 阳光", "体育锻炼次数查询与校园网直连打卡", "体育", "#0288d1", a.td, "td"],
+    ["spark", "抖音续火花", "抖音 App 扫码登录，每日自动续火花", "社交", "#e65100", a.spark, "spark"]
+  ];
+  return `${top("功能")}
+    ${items.map(([id, title, sub, tag, color, st, feature]) => `
+      <div class="card">
+        <div class="row">
+          <div class="icon" style="background:${color}1a;color:${color}">●</div>
+          <div style="flex:1"><h3>${title} <span class="badge gray">${tag}</span></h3><p class="muted">${sub}</p></div>
+          ${badge(st || "none")}
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn" data-go="${id}">打开</button>
+          <button class="btn ghost" data-request="${feature}">申请审批</button>
+        </div>
+      </div>`).join("")}`;
+}
+
+function profileView() {
+  const u = state.user || {}, notes = state.notes || [];
+  return `${top("个人中心", `<button class="btn ghost" id="logout-btn">退出</button>`)}
+    <div class="card"><h3>${esc(u.display_name || u.username || "")}</h3><p class="muted">@${esc(u.username || "")}</p></div>
+    <div class="card">
+      <h3>学生认证</h3>
+      <label>学号</label><input id="sid" value="${esc((u.student && u.student.student_id) || "")}" />
       <label>统一认证密码</label><input id="spw" type="password" />
-      <button class="btn wide" onclick="bindStudent()">保存认证</button>
+      <button class="btn wide" id="bind-btn" style="margin-top:12px">保存认证</button>
     </div>
-    <div class="card"><b>通知</b>${notes.length ? notes.map(n => `<div class="list-item"><b>${n.title || "通知"}</b><div class="muted">${n.content || n.message || ""}</div></div>`).join("") : `<p class="muted">暂无通知</p>`}</div>
-  `;
-}
-async function bindStudent() {
-  try {
-    await api("/api/student/bind", { method: "POST", body: { student_id: $("sid").value.trim(), password: $("spw").value } });
-    toast("认证信息已保存");
-    refreshAll();
-  } catch (err) { toast(err.message); }
-}
-async function logout() {
-  try { await api("/api/auth/logout", { method: "POST", body: {} }); } catch {}
-  localStorage.removeItem("muz_token");
-  state.token = "";
-  showAuth(false);
+    <div class="card"><h3>通知</h3>${notes.length ? notes.map(n => `<div class="list-item"><b>${esc(n.title || "通知")}</b><p class="muted">${esc(n.content || n.message || "")}</p></div>`).join("") : `<div class="empty">暂无通知</div>`}</div>`;
 }
 
-async function renderSignin() {
-  openSub("signin");
+async function signinView() {
   let schedule = {};
-  try { schedule = await api("/api/signin/schedule?cached=0"); } catch (err) { schedule = { message: err.message, schedule: [] }; }
+  try { schedule = await api("/api/signin/schedule?cached=0"); }
+  catch (err) { schedule = { message: err.message, schedule: [] }; }
   const courses = schedule.schedule || [];
-  $("page-signin").innerHTML = `
-    <div class="top"><h2>自动签到</h2><button class="btn ghost" onclick="renderSignin()">刷新</button></div>
-    <div class="card"><div class="row"><div style="flex:1">定时自动签到</div>
-      <button class="btn" onclick="toggleSignin(${schedule.enabled ? "false" : "true"})">${schedule.enabled ? "关闭" : "开启"}</button></div>
-      <div class="muted">${schedule.message || ""}</div>
+  return `${back("自动签到")}
+    <div class="card">
+      <div class="row"><div style="flex:1"><h3>定时自动签到</h3><p class="muted">${esc(schedule.message || "开启后按课表自动签到")}</p></div>
+      <button class="btn" id="toggle-signin">${schedule.enabled ? "关闭" : "开启"}</button></div>
     </div>
-    <div class="card"><b>今日课表</b>${courses.length ? courses.map(c => `<div class="list-item"><b>${c.course_name}</b> ${badge(c.status)}<div class="muted">${c.start_time || ""}-${c.end_time || ""} ${c.classroom || ""}</div></div>`).join("") : `<p class="muted">暂无课表</p>`}</div>
-    <button class="btn ghost wide" onclick="openSub('features')">返回功能</button>
-  `;
-}
-async function toggleSignin(enabled) {
-  try { await api("/api/signin/auto", { method: "POST", body: { enabled } }); toast("已更新"); renderSignin(); } catch (err) { toast(err.message); }
+    <div class="card"><h3>今日课表</h3>${courses.length ? courses.map(c => `<div class="list-item"><div class="row"><div style="flex:1"><b>${esc(c.course_name)}</b><p class="muted">${esc(c.start_time || "")}-${esc(c.end_time || "")} ${esc(c.classroom || "")}</p></div>${badge(c.status)}</div></div>`).join("") : `<div class="empty">暂无课表</div>`}</div>`;
 }
 
-async function renderTd() {
-  openSub("td");
+async function tdView() {
   let td = {}, sun = {};
   try { td = await api("/api/td/status"); } catch (err) { td = { message: err.message }; }
   try { sun = await api("/api/sunshine/status"); } catch (err) { sun = { message: err.message }; }
-  $("page-td").innerHTML = `
-    <div class="top"><h2>TD / 阳光</h2><button class="btn ghost" onclick="renderTd()">刷新</button></div>
+  return `${back("TD / 阳光")}
     <div class="grid">
-      <div class="card"><div class="muted">TD</div><h2>${td.semester_count ?? "-"} / ${td.target_count ?? 32}</h2><div class="muted">${td.message || td.status || ""}</div></div>
-      <div class="card"><div class="muted">阳光</div><h2>${sun.count ?? "-"} / ${sun.target_count ?? 16}</h2><div class="muted">${sun.message || ""}</div></div>
+      <div class="card"><p class="muted">TD</p><h2>${td.semester_count ?? "-"} / ${td.target_count ?? 32}</h2><p class="muted">${esc(td.message || td.status || "")}</p></div>
+      <div class="card"><p class="muted">阳光</p><h2>${sun.count ?? "-"} / ${sun.target_count ?? 16}</h2><p class="muted">${esc(sun.message || "")}</p></div>
     </div>
     <div class="card">
-      <b>上传打卡照片</b>
+      <h3>上传打卡照片</h3>
       <label>入口图</label><input id="td-in" type="file" accept="image/*" />
       <label>出口图</label><input id="td-out" type="file" accept="image/*" />
-      <button class="btn wide" onclick="uploadTd()">保存照片</button>
-      <p class="muted">手动 TD 需在校园网由手机端直连，Web 端仅保存照片与查询次数。</p>
-    </div>
-    <button class="btn ghost wide" onclick="openSub('features')">返回功能</button>
-  `;
-}
-async function uploadTd() {
-  const fd = new FormData();
-  const a = $("td-in").files[0], b = $("td-out").files[0];
-  if (a) fd.append("entrance", a);
-  if (b) fd.append("exit", b);
-  try { await api("/api/td/photos", { method: "POST", body: fd }); toast("照片已保存"); } catch (err) { toast(err.message); }
+      <button class="btn wide" id="td-upload" style="margin-top:12px">保存照片</button>
+      <p class="muted" style="margin-top:8px">手动 TD 需校园网由手机 App 直连，网页端可查询次数并保存照片。</p>
+    </div>`;
 }
 
-let qrTimer = null;
-async function renderSpark() {
-  openSub("spark");
+async function sparkView() {
   let sess = {};
   try { sess = await api("/api/douyin/session"); } catch (err) { sess = { message: err.message }; }
-  const cfg = sess;
-  $("page-spark").innerHTML = `
-    <div class="top"><h2>抖音续火花</h2><button class="btn ghost" onclick="renderSpark()">刷新</button></div>
+  const dy = sess.douyin || sess;
+  const connected = !!(sess.valid || dy.connected);
+  const targets = dy.targets || sess.targets || [];
+  const targetText = targets.map(t => t.name + (t.message ? "|" + t.message : "")).join("\n");
+  return `${back("抖音续火花")}
     <div class="card">
-      <b>${sess.valid || (sess.douyin && sess.douyin.connected) ? "已绑定: " + (sess.nickname || sess.douyin.username || "抖音用户") : "未登录抖音"}</b>
-      <div class="muted">${sess.message || "使用抖音 App 扫码登录，或导入 Cookie"}</div>
-      <div class="row" style="margin-top:10px">
-        <button class="btn" onclick="startQr()">扫码登录</button>
-        <button class="btn ghost" onclick="importCookie()">导入 Cookie</button>
+      <h3>${connected ? "已绑定：" + esc(sess.nickname || dy.username || "抖音用户") : "未登录抖音"}</h3>
+      <p class="muted">${esc(sess.message || "使用抖音 App 扫码登录，或导入 Cookie")}</p>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="qr-start">扫码登录</button>
+        <button class="btn ghost" id="cookie-import">导入 Cookie</button>
       </div>
       <div id="qr-box" class="center hidden">
         <img id="qr-img" class="qr" alt="二维码" />
@@ -319,17 +331,95 @@ async function renderSpark() {
       </div>
     </div>
     <div class="card">
-      <b>自动化任务设置</b>
-      <label>统一留言</label><input id="spark-msg" value="${(cfg.default_message || (cfg.douyin && cfg.douyin.default_message) || "续火花")}" />
-      <label>执行小时 (0-23)</label><input id="spark-hour" type="number" min="0" max="23" value="${cfg.hour ?? (cfg.douyin && cfg.douyin.hour) ?? 9}" />
+      <h3>自动化任务</h3>
+      <label>统一留言</label><input id="spark-msg" value="${esc(dy.default_message || sess.default_message || "续火花")}" />
+      <label>执行小时 (0-23)</label><input id="spark-hour" type="number" min="0" max="23" value="${esc(dy.hour ?? sess.hour ?? 9)}" />
       <label>对象，每行 昵称|留言</label>
-      <textarea id="spark-targets">${((cfg.targets || (cfg.douyin && cfg.douyin.targets) || []).map(t => t.name + (t.message ? "|" + t.message : "")).join("\n"))}</textarea>
-      <div class="row"><button class="btn" onclick="saveSpark(true)">开启并保存</button><button class="btn ghost" onclick="saveSpark(false)">保存并关闭</button></div>
-      <button class="btn wide" style="margin-top:10px" onclick="runSpark()">立即续火花</button>
-    </div>
-    <button class="btn ghost wide" onclick="openSub('features')">返回功能</button>
-  `;
+      <textarea id="spark-targets">${esc(targetText)}</textarea>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="spark-on">开启并保存</button>
+        <button class="btn ghost" id="spark-off">保存并关闭</button>
+      </div>
+      <button class="btn soft wide" id="spark-run" style="margin-top:10px">立即续火花</button>
+    </div>`;
 }
+
+async function render() {
+  const name = route();
+  state.route = name;
+  if (!state.token && name !== "register") { showAuth(false); return; }
+  if (!state.token && name === "register") { showAuth(true); return; }
+  showApp();
+  const tabs = ["home", "features", "profile"];
+  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.toggle("active", b.dataset.route === name));
+  $("tabbar").classList.toggle("hidden", !tabs.includes(name));
+  const view = $("view");
+  view.classList.add("busy");
+  try {
+    if (name === "features") view.innerHTML = featuresView();
+    else if (name === "profile") view.innerHTML = profileView();
+    else if (name === "signin") view.innerHTML = await signinView();
+    else if (name === "td") view.innerHTML = await tdView();
+    else if (name === "spark") view.innerHTML = await sparkView();
+    else view.innerHTML = homeView();
+    bindView(name);
+  } finally {
+    view.classList.remove("busy");
+  }
+}
+
+function bindView(name) {
+  $("view").onclick = async (e) => {
+    const goBtn = e.target.closest("[data-go]");
+    if (goBtn) { go(goBtn.dataset.go); return; }
+    const req = e.target.closest("[data-request]");
+    if (req) {
+      try { await api("/api/student/request", { method: "POST", body: { feature: req.dataset.request } }); toast("已提交审批"); await refreshAll(); render(); }
+      catch (err) { toast(err.message); }
+    }
+  };
+  const backBtn = $("back-btn");
+  if (backBtn) backBtn.onclick = () => go("features");
+  const reloadBtn = $("reload-btn");
+  if (reloadBtn) reloadBtn.onclick = () => render();
+  const logoutBtn = $("logout-btn");
+  if (logoutBtn) logoutBtn.onclick = async () => {
+    try { await api("/api/auth/logout", { method: "POST", body: {} }); } catch {}
+    localStorage.removeItem("muz_token"); state.token = ""; go("login"); showAuth(false);
+  };
+  const bindBtn = $("bind-btn");
+  if (bindBtn) bindBtn.onclick = async () => {
+    try { await api("/api/student/bind", { method: "POST", body: { student_id: $("sid").value.trim(), password: $("spw").value } }); toast("认证信息已保存"); await refreshAll(); render(); }
+    catch (err) { toast(err.message); }
+  };
+  const toggle = $("toggle-signin");
+  if (toggle) toggle.onclick = async () => {
+    const enable = toggle.textContent === "开启";
+    try { await api("/api/signin/auto", { method: "POST", body: { enabled: enable } }); toast("已更新"); render(); }
+    catch (err) { toast(err.message); }
+  };
+  const upload = $("td-upload");
+  if (upload) upload.onclick = async () => {
+    const fd = new FormData();
+    const a = $("td-in").files[0], b = $("td-out").files[0];
+    if (a) fd.append("entrance", a);
+    if (b) fd.append("exit", b);
+    try { await api("/api/td/photos", { method: "POST", body: fd }); toast("照片已保存"); }
+    catch (err) { toast(err.message); }
+  };
+  const qrStart = $("qr-start");
+  if (qrStart) qrStart.onclick = startQr;
+  const cookieBtn = $("cookie-import");
+  if (cookieBtn) cookieBtn.onclick = importCookie;
+  const sparkOn = $("spark-on");
+  if (sparkOn) sparkOn.onclick = () => saveSpark(true);
+  const sparkOff = $("spark-off");
+  if (sparkOff) sparkOff.onclick = () => saveSpark(false);
+  const sparkRun = $("spark-run");
+  if (sparkRun) sparkRun.onclick = runSparkNow;
+}
+
+let qrTimer = null;
 async function startQr() {
   $("qr-box").classList.remove("hidden");
   $("qr-hint").textContent = "正在生成二维码…";
@@ -343,7 +433,7 @@ async function startQr() {
         paintQr(st);
         if (["success","failed","expired","cancelled"].includes(st.status) || st.valid) {
           clearInterval(qrTimer);
-          if (st.status === "success" || st.valid) { toast("抖音扫码登录成功"); renderSpark(); }
+          if (st.status === "success" || st.valid) { toast("抖音扫码登录成功"); render(); }
         }
       } catch (err) { $("qr-hint").textContent = err.message; }
     }, 2000);
@@ -351,12 +441,13 @@ async function startQr() {
 }
 function paintQr(qr) {
   if (qr.qr_image) $("qr-img").src = "data:image/png;base64," + qr.qr_image;
-  $("qr-hint").textContent = qr.status === "scanned" ? "已扫码，请在抖音 App 中确认" : (qr.error || (qr.qr_image ? "请打开抖音 App 扫一扫登录" : "正在生成二维码…"));
+  $("qr-hint").textContent = qr.status === "scanned" ? "已扫码，请在抖音 App 中确认" : (qr.error || (qr.qr_image ? "请打开抖音 App，使用扫一扫登录" : "正在生成二维码…"));
 }
 async function importCookie() {
   const cookies = prompt("粘贴 Cookie JSON 或 name=value; 格式");
   if (!cookies) return;
-  try { await api("/api/douyin/session", { method: "POST", body: { cookies } }); toast("已导入"); renderSpark(); } catch (err) { toast(err.message); }
+  try { await api("/api/douyin/session", { method: "POST", body: { cookies } }); toast("已导入"); render(); }
+  catch (err) { toast(err.message); }
 }
 async function saveSpark(enabled) {
   const targets = $("spark-targets").value.split("\n").map(line => line.trim()).filter(Boolean).map(line => {
@@ -368,26 +459,18 @@ async function saveSpark(enabled) {
     toast("配置已保存");
   } catch (err) { toast(err.message); }
 }
-async function runSpark() {
-  try { const r = await api("/api/douyin/run", { method: "POST", body: {} }); toast(r.message || "已执行"); } catch (err) { toast(err.message); }
+async function runSparkNow() {
+  try { const r = await api("/api/douyin/run", { method: "POST", body: {} }); toast(r.message || "已执行"); }
+  catch (err) { toast(err.message); }
 }
 
-window.renderSignin = renderSignin;
-window.renderTd = renderTd;
-window.renderSpark = renderSpark;
-window.openSub = openSub;
-window.requestFeature = requestFeature;
-window.bindStudent = bindStudent;
-window.logout = logout;
-window.toggleSignin = toggleSignin;
-window.uploadTd = uploadTd;
-window.startQr = startQr;
-window.importCookie = importCookie;
-window.saveSpark = saveSpark;
-window.runSpark = runSpark;
-window.refreshAll = refreshAll;
-
-if (state.token) { showApp(); refreshAll(); } else showAuth(false);
+window.addEventListener("hashchange", () => {
+  if (!state.token && route() === "register") showAuth(true);
+  else if (!state.token) showAuth(false);
+  else render();
+});
+if (state.token) { if (!location.hash || location.hash === "#/login") location.hash = "#/home"; boot(); }
+else { showAuth(route() === "register"); }
 </script>
 </body>
 </html>

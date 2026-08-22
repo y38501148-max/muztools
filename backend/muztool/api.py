@@ -513,9 +513,9 @@ async def web_root():
     index = WEB_DIR / "index.html"
     if not index.exists():
         return {"name": "muztools"}
-    return FileResponse(index)
+    return FileResponse(index, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/index.html")
 async def web_index():
-    return FileResponse(WEB_DIR / "index.html")
+    return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
