@@ -66,7 +66,7 @@ cd android
 
 ## 热更新
 
-后端保存当前客户端版本。App 启动后会检查 `/api/app/version`，有新版本则弹出更新说明并下载安装。当前客户端为 `v1.1.2`。
+后端保存当前客户端版本。App 启动后会检查 `/api/app/version`，有新版本则弹出更新说明并下载安装。当前客户端为 `v1.1.3`。
 
 ```bash
 muz-admin version

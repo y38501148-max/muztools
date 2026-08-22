@@ -167,6 +167,8 @@ def _has_pending_events(events: Path, offset: int) -> bool:
 def _apply_event(session: QrSession, event: dict[str, Any]) -> None:
     kind = event.get("event")
     if kind == "qr":
+        if session.status in {"scanned", "success", "failed", "expired", "cancelled"}:
+            return
         png = _b64_to_png(str(event.get("png") or ""))
         if png:
             session.qr_png = png
@@ -234,22 +236,43 @@ def _stop_worker(session: QrSession) -> None:
             pass
 
 
+def _looks_like_html(value: str) -> bool:
+    sample = value.lstrip().lower()[:240]
+    return (
+        sample.startswith("<!doctype")
+        or sample.startswith("<html")
+        or "<head" in sample
+        or "<body" in sample
+        or "<script" in sample
+    )
+
+
+def _scan_payload_url(data: dict[str, Any]) -> str:
+    url = str(data.get("qrcode_index_url") or "")
+    if not url.startswith(("http://", "https://")):
+        return ""
+    if len(url) > 2048 or _looks_like_html(url):
+        return ""
+    return url
+
+
 def decode_qr_image(data: dict[str, Any]) -> bytes:
     raw = data.get("qrcode") or data.get("qr_code") or data.get("image") or ""
-    if isinstance(raw, str) and raw:
+    if isinstance(raw, str) and raw and not _looks_like_html(raw):
         text = raw.split(",", 1)[-1] if raw.startswith("data:image") else raw
         png = _b64_to_png(text)
         if png:
             return png
-        if raw.startswith("http"):
+        if raw.startswith(("http://", "https://")) and len(raw) < 2048:
             try:
                 import httpx
                 response = httpx.get(raw, timeout=15, headers={"User-Agent": DESKTOP_UA})
-                if response.is_success and response.content:
-                    return response.content
+                content = response.content if response.is_success else b""
+                if content.startswith(b"\x89PNG") or content.startswith(b"\xff\xd8"):
+                    return content
             except Exception:
                 pass
-    url = str(data.get("qrcode_index_url") or data.get("url") or "")
+    url = _scan_payload_url(data)
     if url:
         png = render_qr(url)
         if png:
@@ -287,7 +310,7 @@ def _emit(events: Path, payload: dict[str, Any]) -> None:
 
 def _logged_in(cookies: list[dict[str, Any]]) -> bool:
     names = {str(item.get("name") or "").lower() for item in cookies}
-    return "sessionid" in names or "sessionid_ss" in names
+    return bool(names & {"sessionid", "sessionid_ss", "sid_tt", "sid_guard", "uid_tt"})
 
 
 def _guess_name(page: Any) -> str:
@@ -344,6 +367,7 @@ def _capture_qr(page: Any) -> bytes:
 
 def _worker_main(workdir: Path) -> int:
     events = workdir / "events.jsonl"
+    state = {"redirect": "", "done": False}
 
     def emit_qr(png: bytes) -> None:
         if png:
@@ -380,14 +404,24 @@ def _worker_main(workdir: Path) -> int:
                 data = payload.get("data") if isinstance(payload, dict) else None
                 if not isinstance(data, dict):
                     return
-                png = decode_qr_image(data)
-                if png:
-                    emit_qr(png)
                 status = str(data.get("status") or "")
+                redirect = str(data.get("redirect_url") or "")
                 if status in {"2", "scanned"}:
                     _emit(events, {"event": "status", "status": "scanned"})
-                elif status in {"4", "expired", "canceled", "cancelled"}:
+                    return
+                if status in {"3", "success"} or redirect:
+                    if redirect.startswith("http"):
+                        state["redirect"] = redirect
+                    _emit(events, {"event": "status", "status": "scanned"})
+                    return
+                if status in {"4", "5", "expired", "canceled", "cancelled"}:
                     _emit(events, {"event": "status", "status": "expired", "error": "二维码已过期，请重试"})
+                    state["done"] = True
+                    return
+                if "get_qrcode" in url:
+                    png = decode_qr_image(data)
+                    if png:
+                        emit_qr(png)
 
             page.on("response", on_response)
             try:
@@ -397,35 +431,36 @@ def _worker_main(workdir: Path) -> int:
             page.wait_for_timeout(1800)
             _try_open_login(page)
 
-            found = False
             deadline = time.time() + 22
             while time.time() < deadline:
+                if '"event": "qr"' in events.read_text(encoding="utf-8"):
+                    break
                 captured = _capture_qr(page)
                 if captured:
                     emit_qr(captured)
-                    found = True
-                    break
-                if (workdir / "qr.flag").exists():
-                    found = True
                     break
                 page.wait_for_timeout(400)
-
-            # The intercept may have already written a QR without the flag.
-            if not found:
-                # Give intercept a little more time after click.
-                page.wait_for_timeout(2500)
+            else:
                 captured = _capture_qr(page)
                 if captured:
                     emit_qr(captured)
-                    found = True
 
-            if not found and not any(events.read_text(encoding="utf-8").find('"event": "qr"') >= 0 for _ in [0]):
+            if '"event": "qr"' not in events.read_text(encoding="utf-8"):
                 _emit(events, {"event": "failed", "error": "页面上没有找到登录二维码"})
                 browser.close()
                 return 1
 
+            followed: set[str] = set()
             deadline = time.time() + 150
-            while time.time() < deadline:
+            while time.time() < deadline and not state["done"]:
+                redirect = state["redirect"]
+                if redirect and redirect not in followed:
+                    followed.add(redirect)
+                    try:
+                        page.goto(redirect, wait_until="domcontentloaded", timeout=20000)
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(1200)
                 cookies = context.cookies()
                 if _logged_in(cookies):
                     _emit(
@@ -438,13 +473,15 @@ def _worker_main(workdir: Path) -> int:
                     )
                     browser.close()
                     return 0
-                page.wait_for_timeout(1500)
-            _emit(events, {"event": "status", "status": "expired", "error": "二维码已过期，请重试"})
+                page.wait_for_timeout(1000)
+            if not _logged_in(context.cookies()):
+                _emit(events, {"event": "status", "status": "expired", "error": "二维码已过期，请重试"})
             browser.close()
             return 1
     except Exception as exc:
         _emit(events, {"event": "failed", "error": f"生成二维码失败: {exc}"})
         return 1
+
 
 
 if __name__ == "__main__":

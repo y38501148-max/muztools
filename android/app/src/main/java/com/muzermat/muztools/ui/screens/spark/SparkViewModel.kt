@@ -132,12 +132,13 @@ class SparkViewModel(
         repeat(90) {
             delay(2000)
             val qr = apiClient.getDouyinQrStatus(loginId).getOrNull() ?: return@repeat
+            val freezeQr = _uiState.value.qrStatus in listOf("scanned", "success")
             _uiState.update {
                 it.copy(
-                    qrImage = qr.qrImage.ifBlank { it.qrImage },
+                    qrImage = if (freezeQr) it.qrImage else qr.qrImage.ifBlank { it.qrImage },
                     qrStatus = qr.status,
                     qrError = qr.error,
-                    qrLoading = qr.qrImage.ifBlank { it.qrImage }.isBlank() && qr.status !in listOf("failed", "expired", "cancelled", "success")
+                    qrLoading = qr.qrImage.ifBlank { it.qrImage }.isBlank() && qr.status !in listOf("failed", "expired", "cancelled", "success", "scanned")
                 )
             }
             if (qr.status == "success" || qr.valid) {
