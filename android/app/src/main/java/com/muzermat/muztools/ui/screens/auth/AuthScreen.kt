@@ -119,6 +119,7 @@ fun AuthScreen(
                         onNext = { focusManager.moveFocus(FocusDirection.Down) }
                     ),
                     shape = RoundedCornerShape(12.dp),
+                    supportingText = { Text("6～18 位字母、数字或下划线") },
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -174,8 +175,33 @@ fun AuthScreen(
                         }
                     ),
                     shape = RoundedCornerShape(12.dp),
+                    supportingText = { Text("6～18 位，须含数字、大写和小写字母") },
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = uiState.rememberPassword,
+                            onCheckedChange = viewModel::onRememberPasswordChange,
+                            enabled = !uiState.isLoading
+                        )
+                        Text("记住密码")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = uiState.autoLogin,
+                            onCheckedChange = viewModel::onAutoLoginChange,
+                            enabled = !uiState.isLoading
+                        )
+                        Text("默认登录")
+                    }
+                }
 
                 uiState.errorMessage?.let { error ->
                     Spacer(modifier = Modifier.height(12.dp))

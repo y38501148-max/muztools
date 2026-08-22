@@ -20,6 +20,7 @@ data class SparkUiState(
     val isRefreshing: Boolean = false,
     val session: DouyinSessionResponse = DouyinSessionResponse(),
     val config: DouyinConfig = DouyinConfig(),
+    val studentStatus: String = "unbound",
     val isSubmittingCookie: Boolean = false,
     val isSavingConfig: Boolean = false,
     val isRunningSpark: Boolean = false
@@ -41,18 +42,29 @@ class SparkViewModel(
                 if (isRefresh) it.copy(isRefreshing = true) else it.copy(isLoading = true)
             }
 
+            val studentRes = apiClient.getStudentStatus()
             val sessionRes = apiClient.getDouyinSession()
             _uiState.update { current ->
                 current.copy(
                     isLoading = false,
                     isRefreshing = false,
+                    studentStatus = studentRes.getOrNull()?.status ?: current.studentStatus,
                     session = sessionRes.getOrDefault(current.session)
                 )
             }
         }
     }
 
+    private fun ensureApproved(): Boolean {
+        val approved = _uiState.value.studentStatus == "approved" || _uiState.value.studentStatus == "已通过"
+        if (!approved) {
+            viewModelScope.launch { _messageFlow.emit("学生认证尚未通过审批，无法使用抖音续火花") }
+        }
+        return approved
+    }
+
     fun submitCookies(cookieJson: String) {
+        if (!ensureApproved()) return
         if (cookieJson.isBlank()) {
             viewModelScope.launch { _messageFlow.emit("Cookie 不能为空") }
             return
@@ -76,6 +88,7 @@ class SparkViewModel(
     }
 
     fun toggleAutoSpark(enabled: Boolean) {
+        if (!ensureApproved()) return
         val newConfig = _uiState.value.config.copy(enabled = enabled)
         updateConfig(newConfig)
     }
@@ -103,6 +116,7 @@ class SparkViewModel(
     }
 
     fun updateConfig(config: DouyinConfig = _uiState.value.config) {
+        if (!ensureApproved()) return
         viewModelScope.launch {
             _uiState.update { it.copy(isSavingConfig = true, config = config) }
             val res = apiClient.updateDouyinConfig(config)
@@ -119,6 +133,7 @@ class SparkViewModel(
     }
 
     fun runSparkNow() {
+        if (!ensureApproved()) return
         viewModelScope.launch {
             _uiState.update { it.copy(isRunningSpark = true) }
             val res = apiClient.runDouyinSpark()

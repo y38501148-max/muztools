@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.muzermat.muztools.data.model.SparkTarget
+import com.muzermat.muztools.ui.components.PendingApprovalBanner
 import com.muzermat.muztools.ui.components.SectionHeader
 import com.muzermat.muztools.ui.components.StatusBadge
 
@@ -82,6 +83,12 @@ fun SparkScreen(
                 .padding(paddingValues),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
+            val approved = uiState.studentStatus == "approved" || uiState.studentStatus == "已通过"
+            if (!approved) {
+                item {
+                    PendingApprovalBanner(message = "学生认证通过审批后才可登录抖音并续火花。")
+                }
+            }
             // 账号授权 / Cookie 状态卡片
             item {
                 SectionHeader(title = "抖音账号与会话")
@@ -117,6 +124,7 @@ fun SparkScreen(
                                     cookieInput = ""
                                     showCookieDialog = true
                                 },
+                                enabled = approved,
                                 shape = RoundedCornerShape(10.dp)
                             ) {
                                 Text(if (uiState.session.valid) "更新 Cookie" else "导入 Cookie")
@@ -157,7 +165,8 @@ fun SparkScreen(
                             }
                             Switch(
                                 checked = uiState.config.enabled,
-                                onCheckedChange = { viewModel.toggleAutoSpark(it) }
+                                onCheckedChange = { viewModel.toggleAutoSpark(it) },
+                                enabled = approved
                             )
                         }
 
@@ -250,7 +259,7 @@ fun SparkScreen(
                 ) {
                     Button(
                         onClick = { viewModel.runSparkNow() },
-                        enabled = !uiState.isRunningSpark,
+                        enabled = !uiState.isRunningSpark && approved,
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()

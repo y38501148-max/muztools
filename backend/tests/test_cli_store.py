@@ -21,7 +21,7 @@ def isolated_data(tmp_path, monkeypatch):
 
 
 def test_register_and_approve(tmp_path, capsys):
-    user = store.create_user("alice", "secret", "Alice")
+    user = store.create_user("alice_1", "Secret1", "Alice")
     user["student"]["student_id"] = "25371537"
     user["student"]["real_name"] = "测试"
     user["student"]["status"] = "pending"
@@ -31,12 +31,12 @@ def test_register_and_approve(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "25371537" in out
 
-    main(["approve", "alice"])
-    reloaded = store.find_user_by_username("alice")
+    main(["approve", "alice_1"])
+    reloaded = store.find_user_by_username("alice_1")
     assert reloaded["student"]["status"] == "approved"
 
-    main(["enable-signin", "alice"])
-    reloaded = store.find_user_by_username("alice")
+    main(["enable-signin", "alice_1"])
+    reloaded = store.find_user_by_username("alice_1")
     assert reloaded["student"]["auto_signin"] is True
 
 

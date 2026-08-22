@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.muzermat.muztools.ui.components.PendingApprovalBanner
 import com.muzermat.muztools.ui.components.SectionHeader
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,6 +88,12 @@ fun TdScreen(
                 .padding(paddingValues),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
+            val approved = uiState.studentStatus == "approved" || uiState.studentStatus == "已通过"
+            if (!approved) {
+                item {
+                    PendingApprovalBanner(message = "学生认证通过审批后才可查询次数并在校园网发起手动 TD。")
+                }
+            }
             // 锻炼统计大卡片
             item {
                 Card(
@@ -284,7 +291,7 @@ fun TdScreen(
                 ) {
                     Button(
                         onClick = { viewModel.submitManualTd(context) },
-                        enabled = !uiState.isSubmittingManual,
+                        enabled = !uiState.isSubmittingManual && (uiState.studentStatus == "approved" || uiState.studentStatus == "已通过"),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()

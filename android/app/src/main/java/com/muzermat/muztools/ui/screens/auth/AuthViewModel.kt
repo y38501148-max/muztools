@@ -3,6 +3,7 @@ package com.muzermat.muztools.ui.screens.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.muzermat.muztools.data.api.ApiClient
+import com.muzermat.muztools.data.local.Credentials
 import com.muzermat.muztools.data.local.PreferencesManager
 import com.muzermat.muztools.data.model.LoginRequest
 import com.muzermat.muztools.data.model.RegisterRequest
@@ -16,6 +17,8 @@ data class AuthUiState(
     val username: String = "",
     val displayName: String = "",
     val password: String = "",
+    val rememberPassword: Boolean = false,
+    val autoLogin: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val isLoggedIn: Boolean = false
@@ -30,7 +33,10 @@ class AuthViewModel(
         AuthUiState(
             username = prefs.username ?: "",
             displayName = prefs.displayName ?: "",
-            isLoggedIn = !prefs.token.isNullOrBlank()
+            password = if (prefs.rememberPassword || prefs.autoLogin) prefs.password.orEmpty() else "",
+            rememberPassword = prefs.rememberPassword || prefs.autoLogin,
+            autoLogin = prefs.autoLogin,
+            isLoggedIn = prefs.autoLogin && !prefs.token.isNullOrBlank()
         )
     )
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
@@ -40,6 +46,13 @@ class AuthViewModel(
         set(value) {
             prefs.serverUrl = value
         }
+
+    init {
+        val state = _uiState.value
+        if (!state.isLoggedIn && state.autoLogin && state.username.isNotBlank() && state.password.isNotBlank()) {
+            login()
+        }
+    }
 
     fun onUsernameChange(name: String) {
         _uiState.update { it.copy(username = name, errorMessage = null) }
@@ -53,6 +66,28 @@ class AuthViewModel(
         _uiState.update { it.copy(password = pwd, errorMessage = null) }
     }
 
+    fun onRememberPasswordChange(enabled: Boolean) {
+        val autoLogin = if (enabled) _uiState.value.autoLogin else false
+        _uiState.update { it.copy(rememberPassword = enabled, autoLogin = autoLogin, errorMessage = null) }
+        prefs.rememberPassword = enabled
+        if (!enabled) {
+            prefs.autoLogin = false
+            prefs.password = null
+        }
+    }
+
+    fun onAutoLoginChange(enabled: Boolean) {
+        _uiState.update {
+            it.copy(
+                autoLogin = enabled,
+                rememberPassword = if (enabled) true else it.rememberPassword,
+                errorMessage = null
+            )
+        }
+        prefs.autoLogin = enabled
+        if (enabled) prefs.rememberPassword = true
+    }
+
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
@@ -63,48 +98,34 @@ class AuthViewModel(
 
     fun login() {
         val state = _uiState.value
-        if (state.username.isBlank() || state.password.isBlank()) {
-            _uiState.update { it.copy(errorMessage = "请输入用户名和密码") }
+        Credentials.validateUsername(state.username)?.let { message ->
+            _uiState.update { it.copy(errorMessage = message) }
+            return
+        }
+        if (state.password.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "请输入密码") }
             return
         }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             val res = apiClient.login(LoginRequest(state.username.trim(), state.password))
-            res.fold(
-                onSuccess = { authRes ->
-                    if (!authRes.token.isNullOrBlank()) {
-                        prefs.token = authRes.token
-                        prefs.username = authRes.user?.username ?: state.username.trim()
-                        prefs.displayName = authRes.user?.displayName ?: ""
-                        // 注册设备
-                        apiClient.registerDevice(prefs.deviceId)
-                        _uiState.update { it.copy(isLoading = false, isLoggedIn = true) }
-                    } else {
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                errorMessage = authRes.detail ?: authRes.message ?: "登录失败，未返回 Token"
-                            )
-                        }
-                    }
-                },
-                onFailure = { error ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = error.message ?: "网络请求失败"
-                        )
-                    }
-                }
-            )
+            handleAuthResult(res, state, isRegister = false)
         }
     }
 
     fun register() {
         val state = _uiState.value
-        if (state.username.isBlank() || state.password.isBlank() || state.displayName.isBlank()) {
-            _uiState.update { it.copy(errorMessage = "请完整填写注册信息") }
+        Credentials.validateUsername(state.username)?.let { message ->
+            _uiState.update { it.copy(errorMessage = message) }
+            return
+        }
+        Credentials.validatePassword(state.password)?.let { message ->
+            _uiState.update { it.copy(errorMessage = message) }
+            return
+        }
+        if (state.displayName.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "请填写显示名") }
             return
         }
 
@@ -117,30 +138,50 @@ class AuthViewModel(
                     displayName = state.displayName.trim()
                 )
             )
-            res.fold(
-                onSuccess = { authRes ->
-                    if (!authRes.token.isNullOrBlank()) {
-                        prefs.token = authRes.token
-                        prefs.username = authRes.user?.username ?: state.username.trim()
-                        prefs.displayName = authRes.user?.displayName ?: state.displayName.trim()
-                        // 注册设备
-                        apiClient.registerDevice(prefs.deviceId)
-                        _uiState.update { it.copy(isLoading = false, isLoggedIn = true) }
-                    } else {
-                        // 尝试自动登录
-                        login()
-                    }
-                },
-                onFailure = { error ->
+            handleAuthResult(res, state, isRegister = true)
+        }
+    }
+
+    private suspend fun handleAuthResult(
+        res: Result<com.muzermat.muztools.data.model.AuthResponse>,
+        state: AuthUiState,
+        isRegister: Boolean
+    ) {
+        res.fold(
+            onSuccess = { authRes ->
+                if (!authRes.token.isNullOrBlank()) {
+                    prefs.token = authRes.token
+                    val username = authRes.user?.username ?: state.username.trim()
+                    val displayName = authRes.user?.displayName ?: state.displayName
+                    prefs.persistLogin(
+                        username = username,
+                        displayName = displayName,
+                        rawPassword = state.password,
+                        remember = state.rememberPassword,
+                        autoLoginEnabled = state.autoLogin
+                    )
+                    apiClient.registerDevice(prefs.deviceId)
+                    _uiState.update { it.copy(isLoading = false, isLoggedIn = true, username = username, displayName = displayName) }
+                } else if (isRegister) {
+                    login()
+                } else {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = error.message ?: "注册失败"
+                            errorMessage = authRes.detail ?: authRes.message ?: "登录失败，未返回 Token"
                         )
                     }
                 }
-            )
-        }
+            },
+            onFailure = { error ->
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = error.message ?: if (isRegister) "注册失败" else "网络请求失败"
+                    )
+                }
+            }
+        )
     }
 
     fun logout() {
@@ -148,7 +189,8 @@ class AuthViewModel(
         _uiState.update {
             it.copy(
                 isLoggedIn = false,
-                password = "",
+                password = if (prefs.rememberPassword) prefs.password.orEmpty() else "",
+                username = prefs.username ?: it.username,
                 errorMessage = null
             )
         }

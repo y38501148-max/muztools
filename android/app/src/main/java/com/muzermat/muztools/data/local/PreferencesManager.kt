@@ -14,6 +14,9 @@ class PreferencesManager(context: Context) {
         private const val KEY_USERNAME = "username"
         private const val KEY_DISPLAY_NAME = "display_name"
         private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_PASSWORD = "password"
+        private const val KEY_REMEMBER_PASSWORD = "remember_password"
+        private const val KEY_AUTO_LOGIN = "auto_login"
         private const val DEFAULT_SERVER_URL = "http://150.138.79.9:18787"
     }
 
@@ -48,6 +51,18 @@ class PreferencesManager(context: Context) {
         get() = prefs.getString(KEY_DISPLAY_NAME, null)
         set(value) = prefs.edit().putString(KEY_DISPLAY_NAME, value).apply()
 
+    var password: String?
+        get() = prefs.getString(KEY_PASSWORD, null)
+        set(value) = prefs.edit().putString(KEY_PASSWORD, value).apply()
+
+    var rememberPassword: Boolean
+        get() = prefs.getBoolean(KEY_REMEMBER_PASSWORD, false)
+        set(value) = prefs.edit().putBoolean(KEY_REMEMBER_PASSWORD, value).apply()
+
+    var autoLogin: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_LOGIN, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_LOGIN, value).apply()
+
     val deviceId: String
         get() {
             var id = prefs.getString(KEY_DEVICE_ID, null)
@@ -58,11 +73,25 @@ class PreferencesManager(context: Context) {
             return id
         }
 
+    fun persistLogin(username: String, displayName: String, rawPassword: String, remember: Boolean, autoLoginEnabled: Boolean) {
+        val editor = prefs.edit()
+            .putString(KEY_USERNAME, username)
+            .putString(KEY_DISPLAY_NAME, displayName)
+            .putBoolean(KEY_REMEMBER_PASSWORD, remember || autoLoginEnabled)
+            .putBoolean(KEY_AUTO_LOGIN, autoLoginEnabled)
+        if (remember || autoLoginEnabled) {
+            editor.putString(KEY_PASSWORD, rawPassword)
+        } else {
+            editor.remove(KEY_PASSWORD)
+        }
+        editor.apply()
+    }
+
     fun clearAuth() {
-        prefs.edit()
-            .remove(KEY_TOKEN)
-            .remove(KEY_USERNAME)
-            .remove(KEY_DISPLAY_NAME)
-            .apply()
+        val editor = prefs.edit().remove(KEY_TOKEN).remove(KEY_DISPLAY_NAME)
+        if (!rememberPassword && !autoLogin) {
+            editor.remove(KEY_USERNAME).remove(KEY_PASSWORD)
+        }
+        editor.apply()
     }
 }
