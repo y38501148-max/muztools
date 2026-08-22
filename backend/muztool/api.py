@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import asyncio
 
 from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from . import appver, sunshine, td
 from .config import ensure_dirs
@@ -500,3 +502,20 @@ async def douyin_run(user: dict[str, Any] = Depends(current_user)) -> dict[str, 
     result["success"] = bool(result.get("success"))
     result["message"] = "续火花完成" if result.get("success") else "续火花未全部成功"
     return result
+
+
+
+WEB_DIR = Path(__file__).resolve().parent / "web"
+
+
+@app.get("/")
+async def web_root():
+    index = WEB_DIR / "index.html"
+    if not index.exists():
+        return {"name": "muztools"}
+    return FileResponse(index)
+
+
+@app.get("/index.html")
+async def web_index():
+    return FileResponse(WEB_DIR / "index.html")

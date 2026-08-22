@@ -310,7 +310,9 @@ def _emit(events: Path, payload: dict[str, Any]) -> None:
 
 def _logged_in(cookies: list[dict[str, Any]]) -> bool:
     names = {str(item.get("name") or "").lower() for item in cookies}
-    return bool(names & {"sessionid", "sessionid_ss", "sid_tt", "sid_guard", "uid_tt"})
+    if names & {"sessionid", "sessionid_ss", "sid_tt", "sid_guard", "uid_tt"}:
+        return True
+    return any("sessionid" in name or name.startswith("sid_") for name in names)
 
 
 def _guess_name(page: Any) -> str:
@@ -365,9 +367,52 @@ def _capture_qr(page: Any) -> bytes:
     return b""
 
 
+def _cookie_snapshot(cookies: list[dict[str, Any]]) -> list[str]:
+    return sorted({str(item.get("name") or "") for item in cookies if item.get("name")})
+
+
+def _page_left_login(page: Any) -> bool:
+    try:
+        url = str(page.url or "")
+    except Exception:
+        return False
+    return "creator.douyin.com" in url and "/login" not in url
+
+
+def _handle_check_payload(data: dict[str, Any], state: dict[str, Any], events: Path) -> None:
+    status = str(data.get("status") or data.get("error_code") or "")
+    redirect = str(data.get("redirect_url") or data.get("redirect") or "")
+    if not redirect.startswith("http"):
+        maybe_url = str(data.get("url") or "")
+        if maybe_url.startswith("http") and "qrcode" not in maybe_url:
+            redirect = maybe_url
+    _emit(
+        events,
+        {
+            "event": "debug",
+            "phase": "check",
+            "status": status,
+            "keys": list(data.keys())[:20],
+            "has_redirect": bool(redirect),
+        },
+    )
+    if status in {"2", "scanned"}:
+        _emit(events, {"event": "status", "status": "scanned"})
+        return
+    if status in {"3", "success"} or redirect.startswith("http"):
+        state["confirmed"] = True
+        if redirect.startswith("http"):
+            state["redirect"] = redirect
+        _emit(events, {"event": "status", "status": "scanned"})
+        return
+    if status in {"4", "5", "expired", "canceled", "cancelled"}:
+        _emit(events, {"event": "status", "status": "expired", "error": "二维码已过期，请重试"})
+        state["done"] = True
+
+
 def _worker_main(workdir: Path) -> int:
     events = workdir / "events.jsonl"
-    state = {"redirect": "", "done": False}
+    state = {"redirect": "", "done": False, "token": "", "confirmed": False}
 
     def emit_qr(png: bytes) -> None:
         if png:
@@ -395,33 +440,24 @@ def _worker_main(workdir: Path) -> int:
 
             def on_response(response: Any) -> None:
                 url = getattr(response, "url", "") or ""
-                if "get_qrcode" not in url and "check_qrconnect" not in url:
+                interesting = any(key in url for key in ("get_qrcode", "check_qrconnect", "check_login", "login/callback"))
+                if not interesting:
                     return
                 try:
                     payload = response.json()
                 except Exception:
-                    return
+                    payload = None
                 data = payload.get("data") if isinstance(payload, dict) else None
-                if not isinstance(data, dict):
-                    return
-                status = str(data.get("status") or "")
-                redirect = str(data.get("redirect_url") or "")
-                if status in {"2", "scanned"}:
-                    _emit(events, {"event": "status", "status": "scanned"})
-                    return
-                if status in {"3", "success"} or redirect:
-                    if redirect.startswith("http"):
-                        state["redirect"] = redirect
-                    _emit(events, {"event": "status", "status": "scanned"})
-                    return
-                if status in {"4", "5", "expired", "canceled", "cancelled"}:
-                    _emit(events, {"event": "status", "status": "expired", "error": "二维码已过期，请重试"})
-                    state["done"] = True
-                    return
-                if "get_qrcode" in url:
+                if "get_qrcode" in url and isinstance(data, dict):
+                    token = str(data.get("token") or "")
+                    if token:
+                        state["token"] = token
                     png = decode_qr_image(data)
                     if png:
                         emit_qr(png)
+                    return
+                if isinstance(data, dict) and ("check_qrconnect" in url or "check_login" in url):
+                    _handle_check_payload(data, state, events)
 
             page.on("response", on_response)
             try:
@@ -453,16 +489,31 @@ def _worker_main(workdir: Path) -> int:
             followed: set[str] = set()
             deadline = time.time() + 150
             while time.time() < deadline and not state["done"]:
-                redirect = state["redirect"]
-                if redirect and redirect not in followed:
-                    followed.add(redirect)
+                if state["token"] and not state["confirmed"]:
                     try:
-                        page.goto(redirect, wait_until="domcontentloaded", timeout=20000)
+                        check = page.request.get(
+                            "https://creator.douyin.com/passport/web/check_qrconnect/",
+                            params={
+                                "token": state["token"],
+                                "service": "https://creator.douyin.com",
+                                "need_logo": "false",
+                                "is_frontier": "false",
+                                "need_short_url": "false",
+                                "aid": "2906",
+                                "language": "zh",
+                                "account_sdk_source": "sso",
+                                "device_platform": "web_app",
+                            },
+                        )
+                        payload = check.json()
+                        data = payload.get("data") if isinstance(payload, dict) else None
+                        if isinstance(data, dict):
+                            _handle_check_payload(data, state, events)
                     except Exception:
                         pass
-                    page.wait_for_timeout(1200)
+
                 cookies = context.cookies()
-                if _logged_in(cookies):
+                if _logged_in(cookies) or (state["confirmed"] and _page_left_login(page)):
                     _emit(
                         events,
                         {
@@ -473,9 +524,67 @@ def _worker_main(workdir: Path) -> int:
                     )
                     browser.close()
                     return 0
+
+                if state["confirmed"]:
+                    redirect = state["redirect"]
+                    if redirect and redirect not in followed:
+                        followed.add(redirect)
+                        try:
+                            page.goto(redirect, wait_until="domcontentloaded", timeout=20000)
+                        except Exception:
+                            pass
+                        page.wait_for_timeout(1500)
+                        cookies = context.cookies()
+                        _emit(
+                            events,
+                            {
+                                "event": "debug",
+                                "phase": "after_redirect",
+                                "url": getattr(page, "url", ""),
+                                "cookies": _cookie_snapshot(cookies),
+                            },
+                        )
+                        if _logged_in(cookies) or _page_left_login(page):
+                            _emit(
+                                events,
+                                {
+                                    "event": "success",
+                                    "cookies": cookies,
+                                    "nickname": _guess_name(page),
+                                },
+                            )
+                            browser.close()
+                            return 0
+                    elif not redirect:
+                        page.wait_for_timeout(2000)
+                        cookies = context.cookies()
+                        _emit(
+                            events,
+                            {
+                                "event": "debug",
+                                "phase": "confirmed_no_redirect",
+                                "url": getattr(page, "url", ""),
+                                "cookies": _cookie_snapshot(cookies),
+                            },
+                        )
+                        if _logged_in(cookies) or _page_left_login(page):
+                            _emit(
+                                events,
+                                {
+                                    "event": "success",
+                                    "cookies": cookies,
+                                    "nickname": _guess_name(page),
+                                },
+                            )
+                            browser.close()
+                            return 0
                 page.wait_for_timeout(1000)
-            if not _logged_in(context.cookies()):
-                _emit(events, {"event": "status", "status": "expired", "error": "二维码已过期，请重试"})
+            cookies = context.cookies()
+            if _logged_in(cookies) or (state["confirmed"] and (_page_left_login(page))):
+                _emit(events, {"event": "success", "cookies": cookies, "nickname": _guess_name(page)})
+                browser.close()
+                return 0
+            _emit(events, {"event": "status", "status": "expired", "error": "二维码已过期，请重试"})
             browser.close()
             return 1
     except Exception as exc:

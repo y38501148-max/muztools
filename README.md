@@ -57,6 +57,10 @@ MUZTOOLS_DATA=./data MUZTOOLS_PORT=18787 python -m muztool.main
 
 健康检查：`GET /api/health`
 
+## Web UI
+
+后端启动后打开 `http://服务器:18787/`（外网映射端口同 API）。页面与 App 一致：登录/注册、首页、签到、TD、续火花、个人中心。
+
 ## Android
 
 ```bash

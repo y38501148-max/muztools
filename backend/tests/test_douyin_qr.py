@@ -43,3 +43,22 @@ def test_public_qr_payload():
     assert payload["status"] == "pending"
     assert payload["valid"] is False
     assert payload["qr_image"] == base64.b64encode(PNG).decode("ascii")
+
+
+from muztool.douyin_qr import _logged_in, _handle_check_payload
+
+
+def test_logged_in_cookie_names():
+    assert _logged_in([{"name": "sessionid", "value": "x"}])
+    assert _logged_in([{"name": "sid_tt", "value": "x"}])
+    assert not _logged_in([{"name": "ttwid", "value": "x"}])
+
+
+def test_handle_check_confirms_redirect(tmp_path):
+    events = tmp_path / "events.jsonl"
+    events.write_text("", encoding="utf-8")
+    state = {"redirect": "", "done": False, "confirmed": False}
+    _handle_check_payload({"status": "3", "redirect_url": "https://www.douyin.com/passport/sso/login/callback/?x=1"}, state, events)
+    assert state["confirmed"] is True
+    assert state["redirect"].startswith("https://")
+    assert "scanned" in events.read_text(encoding="utf-8")

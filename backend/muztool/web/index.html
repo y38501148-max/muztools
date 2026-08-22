@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>盐的工具箱</title>
+  <style>
+    :root {
+      --bg: #101318;
+      --surface: #181c22;
+      --card: #1e242c;
+      --line: #2a313b;
+      --text: #eef2f6;
+      --muted: #9aa4b2;
+      --accent: #7aa2ff;
+      --orange: #e65100;
+      --ok: #3dbe7a;
+      --err: #ef6b6b;
+      --pending: #e0b44a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    a { color: var(--accent); }
+    .hidden { display: none !important; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 16px 16px 96px; }
+    h1, h2, h3 { margin: 0; }
+    .muted { color: var(--muted); }
+    .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 16px; margin: 10px 0; }
+    .row { display: flex; gap: 10px; align-items: center; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .btn { border: 0; border-radius: 12px; padding: 10px 14px; background: var(--accent); color: #0b1220; font-weight: 700; }
+    .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+    .btn.wide { width: 100%; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    input, textarea, select { width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+    textarea { min-height: 90px; }
+    .badge { font-size: 12px; padding: 3px 8px; border-radius: 999px; background: #2a313b; color: var(--muted); }
+    .badge.ok { background: #163524; color: var(--ok); }
+    .badge.warn { background: #3a3016; color: var(--pending); }
+    .badge.err { background: #3a1b1b; color: var(--err); }
+    .nav { position: fixed; left: 0; right: 0; bottom: 0; background: #161a20; border-top: 1px solid var(--line); display: flex; }
+    .nav button { flex: 1; background: none; border: 0; color: var(--muted); padding: 10px 0 14px; }
+    .nav button.active { color: var(--accent); font-weight: 700; }
+    .toast { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); background: #222; border: 1px solid var(--line); padding: 10px 14px; border-radius: 12px; z-index: 20; }
+    .qr { width: 240px; height: 240px; background: #fff; border-radius: 16px; margin: 12px auto; object-fit: contain; }
+    .center { text-align: center; }
+    label { display: block; margin: 8px 0 6px; color: var(--muted); font-size: 13px; }
+    .list-item { padding: 10px 0; border-top: 1px solid var(--line); }
+  </style>
+</head>
+<body>
+  <div id="toast" class="toast hidden"></div>
+
+  <section id="auth" class="wrap">
+    <div class="top"><h1>盐的工具箱</h1></div>
+    <p class="muted">登录后使用自动签到、TD / 阳光和抖音续火花</p>
+    <div class="card">
+      <label>用户名</label>
+      <input id="auth-user" autocomplete="username" />
+      <div id="auth-nick-wrap">
+        <label>显示名</label>
+        <input id="auth-nick" />
+      </div>
+      <label>密码</label>
+      <input id="auth-pass" type="password" autocomplete="current-password" />
+      <p class="muted">6～18 位。注册时须含数字、大写和小写字母</p>
+      <button class="btn wide" id="auth-submit">登录</button>
+      <p class="center"><a href="#" id="auth-switch">没有账号？去注册</a></p>
+    </div>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="wrap" id="page-home"></div>
+    <div class="wrap hidden" id="page-features"></div>
+    <div class="wrap hidden" id="page-profile"></div>
+    <div class="wrap hidden" id="page-signin"></div>
+    <div class="wrap hidden" id="page-td"></div>
+    <div class="wrap hidden" id="page-spark"></div>
+    <nav class="nav">
+      <button data-tab="home" class="active">首页</button>
+      <button data-tab="features">功能</button>
+      <button data-tab="profile">我的</button>
+    </nav>
+  </section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { token: localStorage.getItem("muz_token") || "", user: null, mode: "login", tab: "home" };
+
+function toast(msg) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  setTimeout(() => el.classList.add("hidden"), 2400);
+}
+function badge(status) {
+  const map = { approved: ["ok","已通过"], pending: ["warn","待审批"], verified: ["ok","已认证"], unbound: ["","未绑定"], signed: ["ok","已签"], none: ["","未申请"] };
+  const [cls, text] = map[status] || ["", status || "未知"];
+  return `<span class="badge ${cls}">${text}</span>`;
+}
+async function api(path, opts = {}) {
+  const headers = { "Accept": "application/json", ...(opts.headers || {}) };
+  if (state.token) headers.Authorization = "Bearer " + state.token;
+  if (opts.body && !(opts.body instanceof FormData) && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, { ...opts, headers, body: opts.body instanceof FormData || typeof opts.body === "string" ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined });
+  const text = await res.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch { data = { detail: text }; }
+  if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
+  return data;
+}
+
+function showAuth(register) {
+  state.mode = register ? "register" : "login";
+  $("auth").classList.remove("hidden");
+  $("app").classList.add("hidden");
+  $("auth-nick-wrap").classList.toggle("hidden", !register);
+  $("auth-submit").textContent = register ? "注册" : "登录";
+  $("auth-switch").textContent = register ? "已有账号？去登录" : "没有账号？去注册";
+}
+function showApp() {
+  $("auth").classList.add("hidden");
+  $("app").classList.remove("hidden");
+}
+
+$("auth-switch").onclick = (e) => { e.preventDefault(); showAuth(state.mode !== "register"); };
+$("auth-submit").onclick = async () => {
+  try {
+    const username = $("auth-user").value.trim();
+    const password = $("auth-pass").value;
+    const body = state.mode === "register" ? { username, password, display_name: $("auth-nick").value.trim() || username } : { username, password };
+    const data = await api(state.mode === "register" ? "/api/auth/register" : "/api/auth/login", { method: "POST", body });
+    state.token = data.token;
+    localStorage.setItem("muz_token", data.token);
+    showApp();
+    await refreshAll();
+  } catch (err) { toast(err.message); }
+};
+
+document.querySelectorAll(".nav button").forEach((btn) => {
+  btn.onclick = () => {
+    state.tab = btn.dataset.tab;
+    document.querySelectorAll(".nav button").forEach((b) => b.classList.toggle("active", b === btn));
+    ["home","features","profile"].forEach((name) => $(`page-${name}`).classList.toggle("hidden", name !== btn.dataset.tab));
+    ["signin","td","spark"].forEach((name) => $(`page-${name}`).classList.add("hidden"));
+  };
+});
+
+function openSub(name) {
+  ["home","features","profile","signin","td","spark"].forEach((id) => $(`page-${id}`).classList.toggle("hidden", id !== name));
+}
+
+async function refreshAll() {
+  try {
+    const [me, student, home, notes] = await Promise.all([
+      api("/api/me"),
+      api("/api/student").catch(() => ({})),
+      api("/api/home?cached=1").catch(() => ({})),
+      api("/api/notifications").catch(() => []),
+    ]);
+    state.user = me;
+    state.student = student;
+    state.home = home;
+    state.notes = notes.items || notes || [];
+    renderHome();
+    renderFeatures();
+    renderProfile();
+  } catch (err) {
+    if (String(err.message).includes("未登录")) {
+      localStorage.removeItem("muz_token");
+      state.token = "";
+      showAuth(false);
+    } else toast(err.message);
+  }
+}
+
+function renderHome() {
+  const u = state.user || {};
+  const s = state.student || {};
+  const h = state.home || {};
+  const td = h.td || {};
+  const sun = h.sunshine || {};
+  const courses = (h.schedule && h.schedule.schedule) || [];
+  $("page-home").innerHTML = `
+    <div class="top"><h2>首页</h2><button class="btn ghost" onclick="refreshAll()">刷新</button></div>
+    <div class="card"><b>${u.display_name || u.username || ""}</b><div class="muted">学号 ${s.student_id || "未绑定"} ${badge(s.status)}</div></div>
+    <div class="grid">
+      <div class="card"><div class="muted">TD 课外锻炼</div><h2>${td.semester_count ?? "-"} / ${td.target_count ?? 32}</h2></div>
+      <div class="card"><div class="muted">阳光体育</div><h2>${sun.count ?? "-"} / ${sun.target_count ?? 16}</h2></div>
+    </div>
+    <div class="grid">
+      <div class="card" onclick="openSub('signin')"><b>自动签到</b><div class="muted">${(u.student && u.student.auto_signin) ? "已开启" : "未开启"}</div></div>
+      <div class="card" onclick="openSub('spark')"><b>抖音续火花</b><div class="muted">${(u.douyin && u.douyin.connected) ? "已登录" : "未登录"}</div></div>
+    </div>
+    <div class="card"><b>今日课程签到</b>${courses.length ? courses.map(c => `<div class="list-item"><b>${c.course_name}</b> ${badge(c.status)}<div class="muted">${c.start_time || ""} ${c.classroom || ""}</div></div>`).join("") : `<p class="muted">暂无课程或课表未加载</p>`}</div>
+  `;
+}
+
+function renderFeatures() {
+  const a = (state.user && state.user.approvals) || {};
+  $("page-features").innerHTML = `
+    <div class="top"><h2>功能</h2></div>
+    ${feat("自动签到", "课表查询与定时自动签到", a.signin, "signin")}
+    ${feat("TD / 阳光", "体育锻炼次数查询与校园网直连打卡", a.td, "td")}
+    ${feat("抖音续火花", "抖音 App 扫码登录，每日自动续火花", a.spark, "spark")}
+  `;
+}
+function feat(title, sub, status, page) {
+  return `<div class="card"><div class="row"><div style="flex:1"><b>${title}</b><div class="muted">${sub}</div></div>${badge(status || "none")}</div>
+    <div class="row" style="margin-top:10px"><button class="btn" onclick="openSub('${page}')">打开</button>
+    <button class="btn ghost" onclick="requestFeature('${page === "spark" ? "spark" : page}')">申请审批</button></div></div>`;
+}
+async function requestFeature(feature) {
+  try {
+    await api("/api/student/request", { method: "POST", body: { feature } });
+    toast("已提交审批");
+    refreshAll();
+  } catch (err) { toast(err.message); }
+}
+
+function renderProfile() {
+  const u = state.user || {};
+  const notes = state.notes || [];
+  $("page-profile").innerHTML = `
+    <div class="top"><h2>个人中心</h2><button class="btn ghost" onclick="logout()">退出</button></div>
+    <div class="card"><b>${u.display_name || u.username}</b><div class="muted">@${u.username || ""}</div></div>
+    <div class="card">
+      <b>绑定学号</b>
+      <label>学号</label><input id="sid" value="${(u.student && u.student.student_id) || ""}" />
+      <label>统一认证密码</label><input id="spw" type="password" />
+      <button class="btn wide" onclick="bindStudent()">保存认证</button>
+    </div>
+    <div class="card"><b>通知</b>${notes.length ? notes.map(n => `<div class="list-item"><b>${n.title || "通知"}</b><div class="muted">${n.content || n.message || ""}</div></div>`).join("") : `<p class="muted">暂无通知</p>`}</div>
+  `;
+}
+async function bindStudent() {
+  try {
+    await api("/api/student/bind", { method: "POST", body: { student_id: $("sid").value.trim(), password: $("spw").value } });
+    toast("认证信息已保存");
+    refreshAll();
+  } catch (err) { toast(err.message); }
+}
+async function logout() {
+  try { await api("/api/auth/logout", { method: "POST", body: {} }); } catch {}
+  localStorage.removeItem("muz_token");
+  state.token = "";
+  showAuth(false);
+}
+
+async function renderSignin() {
+  openSub("signin");
+  let schedule = {};
+  try { schedule = await api("/api/signin/schedule?cached=0"); } catch (err) { schedule = { message: err.message, schedule: [] }; }
+  const courses = schedule.schedule || [];
+  $("page-signin").innerHTML = `
+    <div class="top"><h2>自动签到</h2><button class="btn ghost" onclick="renderSignin()">刷新</button></div>
+    <div class="card"><div class="row"><div style="flex:1">定时自动签到</div>
+      <button class="btn" onclick="toggleSignin(${schedule.enabled ? "false" : "true"})">${schedule.enabled ? "关闭" : "开启"}</button></div>
+      <div class="muted">${schedule.message || ""}</div>
+    </div>
+    <div class="card"><b>今日课表</b>${courses.length ? courses.map(c => `<div class="list-item"><b>${c.course_name}</b> ${badge(c.status)}<div class="muted">${c.start_time || ""}-${c.end_time || ""} ${c.classroom || ""}</div></div>`).join("") : `<p class="muted">暂无课表</p>`}</div>
+    <button class="btn ghost wide" onclick="openSub('features')">返回功能</button>
+  `;
+}
+async function toggleSignin(enabled) {
+  try { await api("/api/signin/auto", { method: "POST", body: { enabled } }); toast("已更新"); renderSignin(); } catch (err) { toast(err.message); }
+}
+
+async function renderTd() {
+  openSub("td");
+  let td = {}, sun = {};
+  try { td = await api("/api/td/status"); } catch (err) { td = { message: err.message }; }
+  try { sun = await api("/api/sunshine/status"); } catch (err) { sun = { message: err.message }; }
+  $("page-td").innerHTML = `
+    <div class="top"><h2>TD / 阳光</h2><button class="btn ghost" onclick="renderTd()">刷新</button></div>
+    <div class="grid">
+      <div class="card"><div class="muted">TD</div><h2>${td.semester_count ?? "-"} / ${td.target_count ?? 32}</h2><div class="muted">${td.message || td.status || ""}</div></div>
+      <div class="card"><div class="muted">阳光</div><h2>${sun.count ?? "-"} / ${sun.target_count ?? 16}</h2><div class="muted">${sun.message || ""}</div></div>
+    </div>
+    <div class="card">
+      <b>上传打卡照片</b>
+      <label>入口图</label><input id="td-in" type="file" accept="image/*" />
+      <label>出口图</label><input id="td-out" type="file" accept="image/*" />
+      <button class="btn wide" onclick="uploadTd()">保存照片</button>
+      <p class="muted">手动 TD 需在校园网由手机端直连，Web 端仅保存照片与查询次数。</p>
+    </div>
+    <button class="btn ghost wide" onclick="openSub('features')">返回功能</button>
+  `;
+}
+async function uploadTd() {
+  const fd = new FormData();
+  const a = $("td-in").files[0], b = $("td-out").files[0];
+  if (a) fd.append("entrance", a);
+  if (b) fd.append("exit", b);
+  try { await api("/api/td/photos", { method: "POST", body: fd }); toast("照片已保存"); } catch (err) { toast(err.message); }
+}
+
+let qrTimer = null;
+async function renderSpark() {
+  openSub("spark");
+  let sess = {};
+  try { sess = await api("/api/douyin/session"); } catch (err) { sess = { message: err.message }; }
+  const cfg = sess;
+  $("page-spark").innerHTML = `
+    <div class="top"><h2>抖音续火花</h2><button class="btn ghost" onclick="renderSpark()">刷新</button></div>
+    <div class="card">
+      <b>${sess.valid || (sess.douyin && sess.douyin.connected) ? "已绑定: " + (sess.nickname || sess.douyin.username || "抖音用户") : "未登录抖音"}</b>
+      <div class="muted">${sess.message || "使用抖音 App 扫码登录，或导入 Cookie"}</div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" onclick="startQr()">扫码登录</button>
+        <button class="btn ghost" onclick="importCookie()">导入 Cookie</button>
+      </div>
+      <div id="qr-box" class="center hidden">
+        <img id="qr-img" class="qr" alt="二维码" />
+        <p id="qr-hint" class="muted">正在生成二维码…</p>
+      </div>
+    </div>
+    <div class="card">
+      <b>自动化任务设置</b>
+      <label>统一留言</label><input id="spark-msg" value="${(cfg.default_message || (cfg.douyin && cfg.douyin.default_message) || "续火花")}" />
+      <label>执行小时 (0-23)</label><input id="spark-hour" type="number" min="0" max="23" value="${cfg.hour ?? (cfg.douyin && cfg.douyin.hour) ?? 9}" />
+      <label>对象，每行 昵称|留言</label>
+      <textarea id="spark-targets">${((cfg.targets || (cfg.douyin && cfg.douyin.targets) || []).map(t => t.name + (t.message ? "|" + t.message : "")).join("\n"))}</textarea>
+      <div class="row"><button class="btn" onclick="saveSpark(true)">开启并保存</button><button class="btn ghost" onclick="saveSpark(false)">保存并关闭</button></div>
+      <button class="btn wide" style="margin-top:10px" onclick="runSpark()">立即续火花</button>
+    </div>
+    <button class="btn ghost wide" onclick="openSub('features')">返回功能</button>
+  `;
+}
+async function startQr() {
+  $("qr-box").classList.remove("hidden");
+  $("qr-hint").textContent = "正在生成二维码…";
+  try {
+    const qr = await api("/api/douyin/qr/start", { method: "POST", body: {} });
+    paintQr(qr);
+    if (qrTimer) clearInterval(qrTimer);
+    qrTimer = setInterval(async () => {
+      try {
+        const st = await api("/api/douyin/qr/status?login_id=" + encodeURIComponent(qr.login_id));
+        paintQr(st);
+        if (["success","failed","expired","cancelled"].includes(st.status) || st.valid) {
+          clearInterval(qrTimer);
+          if (st.status === "success" || st.valid) { toast("抖音扫码登录成功"); renderSpark(); }
+        }
+      } catch (err) { $("qr-hint").textContent = err.message; }
+    }, 2000);
+  } catch (err) { $("qr-hint").textContent = err.message; }
+}
+function paintQr(qr) {
+  if (qr.qr_image) $("qr-img").src = "data:image/png;base64," + qr.qr_image;
+  $("qr-hint").textContent = qr.status === "scanned" ? "已扫码，请在抖音 App 中确认" : (qr.error || (qr.qr_image ? "请打开抖音 App 扫一扫登录" : "正在生成二维码…"));
+}
+async function importCookie() {
+  const cookies = prompt("粘贴 Cookie JSON 或 name=value; 格式");
+  if (!cookies) return;
+  try { await api("/api/douyin/session", { method: "POST", body: { cookies } }); toast("已导入"); renderSpark(); } catch (err) { toast(err.message); }
+}
+async function saveSpark(enabled) {
+  const targets = $("spark-targets").value.split("\n").map(line => line.trim()).filter(Boolean).map(line => {
+    const [name, message] = line.split("|");
+    return { name: name.trim(), message: (message || "").trim() };
+  });
+  try {
+    await api("/api/douyin/config", { method: "PUT", body: { enabled, default_message: $("spark-msg").value, hour: Number($("spark-hour").value || 9), targets } });
+    toast("配置已保存");
+  } catch (err) { toast(err.message); }
+}
+async function runSpark() {
+  try { const r = await api("/api/douyin/run", { method: "POST", body: {} }); toast(r.message || "已执行"); } catch (err) { toast(err.message); }
+}
+
+window.renderSignin = renderSignin;
+window.renderTd = renderTd;
+window.renderSpark = renderSpark;
+window.openSub = openSub;
+window.requestFeature = requestFeature;
+window.bindStudent = bindStudent;
+window.logout = logout;
+window.toggleSignin = toggleSignin;
+window.uploadTd = uploadTd;
+window.startQr = startQr;
+window.importCookie = importCookie;
+window.saveSpark = saveSpark;
+window.runSpark = runSpark;
+window.refreshAll = refreshAll;
+
+if (state.token) { showApp(); refreshAll(); } else showAuth(false);
+</script>
+</body>
+</html>
