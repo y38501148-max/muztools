@@ -10,7 +10,7 @@ from typing import Any
 import fcntl
 
 from .config import DATA_DIR, ensure_dirs
-from .security import hash_password, new_id, new_token, verify_password
+from .security import hash_password, new_id, new_token, validate_password, validate_username, verify_password
 
 TZ_BEIJING = timezone(timedelta(hours=8))
 
@@ -136,6 +136,8 @@ def resolve_user(key: str) -> dict[str, Any] | None:
 
 
 def create_user(username: str, password: str, display_name: str) -> dict[str, Any]:
+    username = validate_username(username)
+    password = validate_password(password)
     if find_user_by_username(username):
         raise ValueError("用户名已存在")
     user = empty_user(username, password, display_name)

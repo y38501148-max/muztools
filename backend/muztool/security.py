@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import secrets
 from pathlib import Path
 
@@ -37,3 +38,25 @@ def new_token() -> str:
 
 def new_id() -> str:
     return secrets.token_hex(8)
+
+
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{6,18}$")
+
+
+def validate_username(username: str) -> str:
+    name = (username or "").strip()
+    if not USERNAME_RE.fullmatch(name):
+        raise ValueError("账号须为 6～18 位字母、数字或下划线")
+    return name
+
+
+def validate_password(password: str) -> str:
+    if not 6 <= len(password or "") <= 18:
+        raise ValueError("密码须为 6～18 位")
+    if not re.search(r"[0-9]", password):
+        raise ValueError("密码必须包含数字")
+    if not re.search(r"[a-z]", password):
+        raise ValueError("密码必须包含小写字母")
+    if not re.search(r"[A-Z]", password):
+        raise ValueError("密码必须包含大写字母")
+    return password

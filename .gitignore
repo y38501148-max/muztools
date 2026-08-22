@@ -1,31 +1,47 @@
+# OS / editor
 .DS_Store
 .idea/
 .vscode/
+*.iml
+*.log
+*.swp
+
+# Python env and caches
 __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
 .venv/
 venv/
-backend/data/
-backend/.env
-*.apk
-*.aab
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
-android/app/release/
-android/app/debug/
-*.iml
-.kotlin/
-
-android/.gradle/
-android/.kotlin/
-android/app/build/
-android/build/
-android/local.properties
+env/
 backend/.venv/
 backend/.pytest_cache/
 backend/muztools.egg-info/
-backend/**/__pycache__/
+*.egg-info/
+
+# Secrets and runtime data
+.env
+.env.*
+backend/.env
+backend/data/
+**/secret.key
+**/photos/
+
+# Android build / local SDK
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/app/release/
+android/app/debug/
+android/local.properties
+android/.cxx/
+android/captures/
+*.apk
+*.aab
+*.ap_
+release/
+!release/.gitkeep
+
+# Gradle wrapper jar is source; local caches are not
+.gradle/

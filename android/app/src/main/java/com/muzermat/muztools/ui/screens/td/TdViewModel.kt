@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.muzermat.muztools.data.api.ApiClient
+import com.muzermat.muztools.data.model.StudentStatusResponse
 import com.muzermat.muztools.data.model.SunshineStatusResponse
 import com.muzermat.muztools.data.model.TdStatusResponse
 import com.muzermat.muztools.data.td.TdClient
@@ -24,6 +25,7 @@ data class TdUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val studentId: String = "",
+    val studentStatus: String = "unbound",
     val tdStatus: TdStatusResponse = TdStatusResponse(),
     val sunshineStatus: SunshineStatusResponse = SunshineStatusResponse(),
     val selectedCampus: String = "学院路",
@@ -64,6 +66,7 @@ class TdViewModel(
                     isLoading = false,
                     isRefreshing = false,
                     studentId = studentRes.getOrNull()?.studentId.orEmpty(),
+                    studentStatus = studentRes.getOrNull()?.status ?: current.studentStatus,
                     tdStatus = tdRes.getOrDefault(current.tdStatus),
                     sunshineStatus = sunshineRes.getOrDefault(current.sunshineStatus)
                 )
@@ -91,6 +94,11 @@ class TdViewModel(
         val state = _uiState.value
         if (state.studentId.isBlank()) {
             viewModelScope.launch { _messageFlow.emit("请先绑定统一认证学号") }
+            return
+        }
+        val approved = state.studentStatus == "approved" || state.studentStatus == "已通过"
+        if (!approved) {
+            viewModelScope.launch { _messageFlow.emit("学生认证尚未通过审批，无法使用手动 TD") }
             return
         }
         val entranceUri = state.entrancePhotoUri

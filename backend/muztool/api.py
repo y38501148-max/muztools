@@ -171,7 +171,6 @@ async def student_status(user: dict[str, Any] = Depends(current_user)) -> dict[s
 
 @app.get("/api/signin/schedule")
 async def signin_schedule(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    student = require_student(user)
     from datetime import datetime
     from .signin_core import TZ_BEIJING
 
@@ -225,7 +224,7 @@ async def toggle_auto(payload: dict[str, Any] = Body(...), user: dict[str, Any] 
 
 @app.get("/api/td/status")
 async def td_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    student = require_student(user)
+    student = require_student(user, approved=True)
     try:
         rows = await td.query_td_counts(student["student_id"], student["password"])
         latest = td.latest_count(rows)
@@ -253,7 +252,7 @@ async def td_photos(
     exit: UploadFile | None = File(default=None),
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
-    require_student(user)
+    require_student(user, approved=True)
     folder = photo_dir(user["id"])
     saved = []
     if entrance is not None:
@@ -275,7 +274,6 @@ async def td_manual(payload: dict[str, Any] = Body(default={}), user: dict[str, 
 
 @app.get("/api/sunshine/status")
 async def sunshine_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    student = require_student(user)
     try:
         data = await sunshine.query_sunshine(student["student_id"], student["password"])
     except Exception as exc:
@@ -287,6 +285,7 @@ async def sunshine_status(user: dict[str, Any] = Depends(current_user)) -> dict[
 
 @app.post("/api/douyin/session")
 async def douyin_session(payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_student(user, approved=True)
     try:
         cookies = normalize_cookies(payload.get("cookies"))
     except Exception as exc:
@@ -299,6 +298,7 @@ async def douyin_session(payload: dict[str, Any] = Body(...), user: dict[str, An
 
 @app.get("/api/douyin/session")
 async def get_douyin_session(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_student(user, approved=True)
     dy = public_user(user)["douyin"]
     return {
         "valid": bool(dy.get("connected")),
@@ -313,6 +313,7 @@ async def get_douyin_session(user: dict[str, Any] = Depends(current_user)) -> di
 
 @app.put("/api/douyin/config")
 async def douyin_config(payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_student(user, approved=True)
     cfg = user.setdefault("douyin", {})
     if "enabled" in payload:
         cfg["enabled"] = bool(payload.get("enabled"))
@@ -333,6 +334,7 @@ async def douyin_config(payload: dict[str, Any] = Body(...), user: dict[str, Any
 
 @app.post("/api/douyin/run")
 async def douyin_run(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_student(user, approved=True)
     try:
         result = run_spark(user)
     except Exception as exc:

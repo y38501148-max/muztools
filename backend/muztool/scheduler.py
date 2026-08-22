@@ -83,6 +83,8 @@ async def douyin_hourly() -> None:
 
     for user in iter_users():
         cfg = user.get("douyin") or {}
+        if user.get("student", {}).get("status") != "approved":
+            continue
         if not cfg.get("enabled") or int(cfg.get("hour") or 9) != hour:
             continue
         today = datetime.now(TZ_BEIJING).strftime("%Y-%m-%d")

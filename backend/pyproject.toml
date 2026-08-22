@@ -1,7 +1,7 @@
 [project]
 name = "muztools"
 version = "0.1.0"
-description = "木子工具后端：自动签到、TD/阳光查询与手动 TD、抖音续火花"
+description = "盐的工具箱后端：自动签到、TD/阳光查询与手动 TD、抖音续火花"
 requires-python = ">=3.11"
 dependencies = [
   "apscheduler>=3.10",

@@ -43,7 +43,7 @@ fun HomeScreen(
                 title = {
                     Column {
                         Text(
-                            text = "木子工具",
+                            text = "盐的工具箱",
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                         )
                         Text(

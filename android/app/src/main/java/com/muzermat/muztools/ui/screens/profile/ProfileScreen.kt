@@ -112,7 +112,7 @@ fun ProfileScreen(
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = uiState.user?.displayName?.ifBlank { uiState.user?.username } ?: "木子用户",
+                                text = uiState.user?.displayName?.ifBlank { uiState.user?.username } ?: "用户",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                             )
                             Spacer(modifier = Modifier.height(2.dp))
@@ -282,7 +282,7 @@ fun ProfileScreen(
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
             title = { Text("确认退出") },
-            text = { Text("确定要退出当前木子工具账号吗？本地缓存凭据将被清除。") },
+            text = { Text("确定要退出当前盐的工具箱账号吗？本地缓存凭据将被清除。") },
             confirmButton = {
                 Button(
                     onClick = {

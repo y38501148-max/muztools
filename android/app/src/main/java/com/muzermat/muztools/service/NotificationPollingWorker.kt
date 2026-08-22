@@ -20,7 +20,7 @@ class NotificationPollingService(
 ) {
     companion object {
         const val CHANNEL_ID = "muztools_notifications"
-        const val CHANNEL_NAME = "木子工具通知"
+        const val CHANNEL_NAME = "盐的工具箱通知"
     }
 
     private var pollJob: Job? = null
