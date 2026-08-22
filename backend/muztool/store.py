@@ -1,0 +1,208 @@
+from __future__ import annotations
+
+import json
+import uuid
+from copy import deepcopy
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import Any
+
+import fcntl
+
+from .config import DATA_DIR, ensure_dirs
+from .security import hash_password, new_id, new_token, verify_password
+
+TZ_BEIJING = timezone(timedelta(hours=8))
+
+
+def now_iso() -> str:
+    return datetime.now(TZ_BEIJING).isoformat(timespec="seconds")
+
+
+def _locked_read(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return deepcopy(default)
+    with path.open("r", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_SH)
+        try:
+            return json.load(handle)
+        except json.JSONDecodeError:
+            return deepcopy(default)
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _locked_write(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def user_path(user_id: str) -> Path:
+    return DATA_DIR / "users" / f"{user_id}.json"
+
+
+def empty_user(username: str, password: str, display_name: str) -> dict[str, Any]:
+    return {
+        "id": new_id(),
+        "username": username.strip(),
+        "password_hash": hash_password(password),
+        "display_name": display_name.strip() or username.strip(),
+        "created_at": now_iso(),
+        "student": {
+            "student_id": "",
+            "password": "",
+            "real_name": "",
+            "uid": "",
+            "session_id": "",
+            "cookies": {},
+            "status": "unbound",
+            "auto_signin": False,
+            "today_schedule": [],
+            "schedule_date": "",
+        },
+        "td": {
+            "campus": "xueyuanlu",
+            "gap_seconds": 240,
+            "entrance_machine_id": 2,
+            "exit_machine_id": 6,
+        },
+        "douyin": {
+            "cookies": [],
+            "unique_id": "",
+            "username": "",
+            "enabled": False,
+            "default_message": "续火花",
+            "targets": [],
+            "hour": 9,
+            "last_run": "",
+        },
+        "devices": [],
+        "notifications": [],
+    }
+
+
+def load_user(user_id: str) -> dict[str, Any] | None:
+    path = user_path(user_id)
+    if not path.exists():
+        return None
+    return _locked_read(path, {})
+
+
+def save_user(user: dict[str, Any]) -> None:
+    ensure_dirs()
+    _locked_write(user_path(user["id"]), user)
+
+
+def iter_users() -> list[dict[str, Any]]:
+    ensure_dirs()
+    users: list[dict[str, Any]] = []
+    for path in sorted((DATA_DIR / "users").glob("*.json")):
+        data = _locked_read(path, {})
+        if data.get("id"):
+            users.append(data)
+    return users
+
+
+def find_user_by_username(username: str) -> dict[str, Any] | None:
+    target = username.strip().lower()
+    for user in iter_users():
+        if user.get("username", "").lower() == target:
+            return user
+    return None
+
+
+def find_user_by_student_id(student_id: str) -> dict[str, Any] | None:
+    target = student_id.strip()
+    for user in iter_users():
+        if user.get("student", {}).get("student_id") == target:
+            return user
+    return None
+
+
+def resolve_user(key: str) -> dict[str, Any] | None:
+    key = key.strip()
+    direct = load_user(key)
+    if direct:
+        return direct
+    by_name = find_user_by_username(key)
+    if by_name:
+        return by_name
+    return find_user_by_student_id(key)
+
+
+def create_user(username: str, password: str, display_name: str) -> dict[str, Any]:
+    if find_user_by_username(username):
+        raise ValueError("用户名已存在")
+    user = empty_user(username, password, display_name)
+    save_user(user)
+    return user
+
+
+def authenticate(username: str, password: str) -> dict[str, Any]:
+    user = find_user_by_username(username)
+    if not user or not verify_password(password, user.get("password_hash", "")):
+        raise ValueError("用户名或密码错误")
+    return user
+
+
+def session_path(token: str) -> Path:
+    return DATA_DIR / "sessions" / f"{token}.json"
+
+
+def create_session(user_id: str) -> str:
+    ensure_dirs()
+    token = new_token()
+    _locked_write(session_path(token), {"token": token, "user_id": user_id, "created_at": now_iso()})
+    return token
+
+
+def user_from_token(token: str) -> dict[str, Any] | None:
+    if not token:
+        return None
+    data = _locked_read(session_path(token), {})
+    user_id = data.get("user_id")
+    return load_user(user_id) if user_id else None
+
+
+def delete_session(token: str) -> None:
+    path = session_path(token)
+    if path.exists():
+        path.unlink()
+
+
+def public_user(user: dict[str, Any]) -> dict[str, Any]:
+    student = user.get("student", {})
+    return {
+        "id": user.get("id"),
+        "username": user.get("username"),
+        "display_name": user.get("display_name"),
+        "created_at": user.get("created_at"),
+        "student": {
+            "student_id": student.get("student_id", ""),
+            "real_name": student.get("real_name", ""),
+            "status": student.get("status", "unbound"),
+            "auto_signin": bool(student.get("auto_signin")),
+            "schedule_date": student.get("schedule_date", ""),
+        },
+        "td": user.get("td", {}),
+        "douyin": {
+            "connected": bool(user.get("douyin", {}).get("cookies")),
+            "username": user.get("douyin", {}).get("username", ""),
+            "enabled": bool(user.get("douyin", {}).get("enabled")),
+            "default_message": user.get("douyin", {}).get("default_message", "续火花"),
+            "targets": user.get("douyin", {}).get("targets", []),
+            "hour": user.get("douyin", {}).get("hour", 9),
+            "last_run": user.get("douyin", {}).get("last_run", ""),
+        },
+    }
+
+
+def photo_dir(user_id: str) -> Path:
+    path = DATA_DIR / "photos" / user_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path

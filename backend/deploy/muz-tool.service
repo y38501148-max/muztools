@@ -1,0 +1,16 @@
+[Unit]
+Description=muztools API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/muz-tool/backend
+Environment=MUZTOOLS_DATA=/root/muz-tool/data
+Environment=MUZTOOLS_HOST=0.0.0.0
+Environment=MUZTOOLS_PORT=18787
+ExecStart=/root/muz-tool/backend/.venv/bin/python -m muztool.main
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
