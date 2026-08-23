@@ -4,6 +4,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.muzermat.muztools.data.api.ApiClient
 import com.muzermat.muztools.data.local.PreferencesManager
+import com.muzermat.muztools.service.NotificationWatchdogWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,6 +26,9 @@ class MuzApplication : android.app.Application() {
         super.onCreate()
         preferencesManager = PreferencesManager(this)
         apiClient = ApiClient(preferencesManager)
+        if (!preferencesManager.token.isNullOrBlank()) {
+            NotificationWatchdogWorker.schedule(this)
+        }
     }
 
     fun refreshFcmRegistration() {

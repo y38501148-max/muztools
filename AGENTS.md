@@ -145,6 +145,8 @@ muz-tool/
 - Android 首选 Firebase Cloud Messaging；WebSocket/前台服务仍作为未配置 Firebase 或 FCM 不可用时的回退。
 - 服务端通过 `MUZTOOLS_FCM_CREDENTIALS` 和 `MUZTOOLS_FCM_PROJECT_ID` 读取 Firebase Admin SDK 配置。
 - FCM token 必须通过 `/api/devices/fcm` 注册，并使用 AES-GCM 密文保存；不得记录或返回 token。
+- Android 回退通知服务必须使用前台服务、15 秒未读补拉、网络恢复重连、部分唤醒锁、`onTaskRemoved` 重启、启动广播与 WorkManager 15 分钟看门狗；通知权限或通知渠道不可用时不得提前标记消息已送达。
+- `muz-admin message <用户标识> <正文...>` 使用 `push_notification()` 发送；CLI 与 API 属于不同进程，因此 CLI 事件必须写入权限为 `0600` 的 `notification_events` 队列，由 API 进程每 2 秒广播并删除。CLI 输出不得回显提示正文。
 - `google-services.json`、Firebase service-account JSON 和 `data/muztool.env` 均为敏感配置，不能提交 Git 或打进公开仓库。
 - 发布说明不得把“已接入 FCM 代码”描述为“已实现关闭应用推送”，除非 Android Firebase 配置和服务端 Admin SDK 凭据都已配置并完成真实设备验证。
 - 生产可通过 `MUZTOOLS_TIBO_PROXY` 配置代理。
@@ -179,7 +181,7 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.7 为 `versionCode 24`；v1.3.6 为 `versionCode 23`。
+发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.8 为 `versionCode 25`；v1.3.7 为 `versionCode 24`。
 
 ## 服务端部署
 
@@ -212,14 +214,14 @@ ssh server2 'cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data .ven
 ## Android 热更新
 
 ```bash
-cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.7.apk
-scp release/muztools-1.3.7.apk server2:/tmp/
+cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.8.apk
+scp release/muztools-1.3.8.apk server2:/tmp/
 ssh server2 \
   "cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data \
-   .venv/bin/muz-admin set-version 1.3.7 --code 24 \
-   --title 'MuzTool v1.3.7' \
-   --message '续火花每日执行时间增加前后 5 分钟随机偏移' \
-   --apk /tmp/muztools-1.3.7.apk"
+   .venv/bin/muz-admin set-version 1.3.8 --code 25 \
+   --title 'MuzTool v1.3.8' \
+   --message '修复 Android 后台通知保活并新增管理员定向消息命令' \
+   --apk /tmp/muztools-1.3.8.apk"
 ```
 
 除非用户明确要求，不使用 `--force`，也不提高 `min_version_code`。

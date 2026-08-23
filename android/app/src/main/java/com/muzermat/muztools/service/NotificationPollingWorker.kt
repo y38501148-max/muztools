@@ -1,16 +1,24 @@
 package com.muzermat.muztools.service
 
+import android.Manifest
+import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.muzermat.muztools.MainActivity
 import com.muzermat.muztools.MuzApplication
 import com.muzermat.muztools.R
@@ -29,16 +37,43 @@ class MuzNotificationService : Service() {
         private const val NOTICE_CHANNEL_ID = "muztools_notifications"
         private const val FOREGROUND_ID = 10001
         private const val RECONNECT_DELAY_MS = 5_000L
-        private const val FALLBACK_SYNC_INTERVAL_MS = 30_000L
+        private const val FALLBACK_SYNC_INTERVAL_MS = 15_000L
         private const val SOCKET_STALE_AFTER_MS = 70_000L
+        private const val RESTART_DELAY_MS = 5_000L
+        private const val RESTART_REQUEST_CODE = 10002
 
         fun start(context: Context) {
             val intent = Intent(context, MuzNotificationService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    ContextCompat.startForegroundService(context.applicationContext, intent)
+                } else {
+                    context.applicationContext.startService(intent)
+                }
+            }
+            NotificationWatchdogWorker.schedule(context)
         }
 
         fun stop(context: Context) {
+            NotificationWatchdogWorker.cancel(context)
             context.stopService(Intent(context, MuzNotificationService::class.java))
+        }
+
+        fun scheduleRestart(context: Context) {
+            if (com.muzermat.muztools.data.local.PreferencesManager(context).token.isNullOrBlank()) return
+            val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val pending = PendingIntent.getBroadcast(
+                context,
+                RESTART_REQUEST_CODE,
+                Intent(context, NotificationServiceRestartReceiver::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            alarm.setAndAllowWhileIdle(
+                AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                SystemClock.elapsedRealtime() + RESTART_DELAY_MS,
+                pending
+            )
+            NotificationWatchdogWorker.restartSoon(context)
         }
     }
 
@@ -56,6 +91,9 @@ class MuzNotificationService : Service() {
     private var maintenanceJob: Job? = null
     private val syncMutex = Mutex()
     @Volatile private var lastSocketActivityAt = 0L
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var connectivityManager: ConnectivityManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private val app: MuzApplication get() = application as MuzApplication
 
@@ -63,6 +101,8 @@ class MuzNotificationService : Service() {
         super.onCreate()
         createChannels()
         startForeground(FOREGROUND_ID, foregroundNotification())
+        acquireWakeLock()
+        registerNetworkCallback()
         startMaintenanceLoop()
         connect()
     }
@@ -74,18 +114,56 @@ class MuzNotificationService : Service() {
         }
         startMaintenanceLoop()
         connect()
+        NotificationWatchdogWorker.schedule(this)
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        scheduleRestart(this)
+        super.onTaskRemoved(rootIntent)
+    }
 
     override fun onDestroy() {
         reconnectJob?.cancel()
         maintenanceJob?.cancel()
         socket?.close(1000, "service stopped")
         socket = null
+        networkCallback?.let { callback -> runCatching { connectivityManager?.unregisterNetworkCallback(callback) } }
+        networkCallback = null
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
         scope.cancel()
+        scheduleRestart(this)
         super.onDestroy()
+    }
+
+    private fun acquireWakeLock() {
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:notification-service").apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+    }
+
+    private fun registerNetworkCallback() {
+        val manager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                scope.launch {
+                    socket?.cancel()
+                    socket = null
+                    connect()
+                    syncUnreadNotifications()
+                }
+            }
+        }
+        runCatching { manager.registerDefaultNetworkCallback(callback) }
+            .onSuccess {
+                connectivityManager = manager
+                networkCallback = callback
+            }
     }
 
     private fun connect() {
@@ -155,7 +233,7 @@ class MuzNotificationService : Service() {
     private fun deliver(item: NotificationItem) {
         val prefs = app.preferencesManager
         if (prefs.wasNotificationDelivered(item.id)) return
-        prefs.markNotificationDelivered(item.id)
+        if (!notificationsAllowed()) return
         val intent = if (item.url.startsWith("http://") || item.url.startsWith("https://")) {
             Intent(Intent.ACTION_VIEW, Uri.parse(item.url)).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
         } else {
@@ -176,7 +254,22 @@ class MuzNotificationService : Service() {
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
-        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(item.id.hashCode(), notification)
+        NotificationManagerCompat.from(this).notify(item.id.hashCode(), notification)
+        prefs.markNotificationDelivered(item.id)
+    }
+
+    private fun notificationsAllowed(): Boolean {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return false
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+                .getNotificationChannel(NOTICE_CHANNEL_ID)
+            if (channel?.importance == NotificationManager.IMPORTANCE_NONE) return false
+        }
+        return true
     }
 
     private fun foregroundNotification() = NotificationCompat.Builder(this, LIVE_CHANNEL_ID)

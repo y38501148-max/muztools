@@ -284,12 +284,31 @@ async def tibo_monitor() -> None:
         # next hourly run will retry without marking unread posts as seen.
         logger.exception("Tibo X monitor failed")
 
+
+async def notification_event_drain() -> None:
+    from .notify import drain_live_notification_events
+
+    try:
+        drain_live_notification_events()
+    except Exception:
+        logger.exception("Notification event spool drain failed")
+
 def start_scheduler() -> None:
     if scheduler.running:
         return
     scheduler.add_job(daily_sync, "cron", hour=7, minute=0, id="signin_daily_sync", replace_existing=True)
     scheduler.add_job(auto_checkin_executor, "cron", minute="*", id="signin_auto", replace_existing=True)
     scheduler.add_job(douyin_hourly, "cron", minute="*", id="douyin_hourly", replace_existing=True)
+    scheduler.add_job(
+        notification_event_drain,
+        "interval",
+        seconds=2,
+        next_run_time=datetime.now(TZ_BEIJING),
+        id="notification_event_drain",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.add_job(
         tibo_monitor,
         "interval",

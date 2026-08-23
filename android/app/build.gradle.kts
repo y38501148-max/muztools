@@ -13,8 +13,8 @@ android {
         applicationId = "com.muzermat.muztools"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "1.3.7"
+        versionCode = 25
+        versionName = "1.3.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -66,6 +66,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.5")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.5")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.5")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.8.1")

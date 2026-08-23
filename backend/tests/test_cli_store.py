@@ -6,7 +6,7 @@ import pytest
 
 os.environ["MUZTOOLS_DATA"] = str(Path("/tmp/muztools-test-data"))
 
-from muztool import config, invites, store  # noqa: E402
+from muztool import config, invites, notify, store  # noqa: E402
 from muztool.cli import main  # noqa: E402
 from muztool.security import validate_password, validate_username  # noqa: E402
 
@@ -56,6 +56,37 @@ def test_generate_invites_and_stats_do_not_print_plaintext_codes(capsys):
     assert len(data["codes"]) == 3
     assert all(item.get("code_encrypted", "").startswith("v1:") for item in data["codes"])
     assert all("code" not in item for item in data["codes"])
+
+
+def test_message_command_persists_and_queues_notification_without_echoing_body(capsys, monkeypatch):
+    user = store.create_user("notice_1", "Secret1", "Notice")
+    monkeypatch.setattr(notify, "_live_loop", None)
+
+    main(["message", user["id"], "后台", "测试消息", "--title", "测试提示"])
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert payload["success"] is True
+    assert payload["user_id"] == user["id"]
+    assert "后台 测试消息" not in output
+
+    saved = store.load_user(user["id"])
+    item = saved["notifications"][0]
+    assert item["title"] == "测试提示"
+    assert item["body"] == "后台 测试消息"
+    event_files = list((config.DATA_DIR / "notification_events").glob("*.json"))
+    assert len(event_files) == 1
+    assert event_files[0].stat().st_mode & 0o777 == 0o600
+
+    queue = notify.subscribe_live_notifications(user["id"])
+    assert notify.drain_live_notification_events() == 1
+    assert queue.get_nowait()["id"] == item["id"]
+    notify.unsubscribe_live_notifications(user["id"], queue)
+
+
+def test_message_command_rejects_oversized_body():
+    user = store.create_user("notice_2", "Secret1", "Notice")
+    with pytest.raises(SystemExit, match="500"):
+        main(["message", user["id"], "x" * 501])
 
 
 def test_username_and_password_rules():

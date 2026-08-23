@@ -1,9 +1,13 @@
 package com.muzermat.muztools
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.LaunchedEffect
@@ -129,8 +133,12 @@ class MainActivity : ComponentActivity() {
                 val authState by authViewModel.uiState.collectAsState()
                 LaunchedEffect(Unit) { updateViewModel.check() }
                 LaunchedEffect(authState.isLoggedIn) {
-                    if (authState.isLoggedIn) MuzNotificationService.start(this@MainActivity)
-                    else MuzNotificationService.stop(this@MainActivity)
+                    if (authState.isLoggedIn) {
+                        MuzNotificationService.start(this@MainActivity)
+                        requestBackgroundExecutionIfNeeded()
+                    } else {
+                        MuzNotificationService.stop(this@MainActivity)
+                    }
                 }
                 AppNavigation(
                     authViewModel = authViewModel,
@@ -143,6 +151,23 @@ class MainActivity : ComponentActivity() {
                 )
                 UpdateDialog(updateViewModel)
             }
+        }
+    }
+
+    private fun requestBackgroundExecutionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val app = application as MuzApplication
+        if (app.preferencesManager.backgroundPowerPromptShown) return
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        if (powerManager.isIgnoringBatteryOptimizations(packageName)) return
+        app.preferencesManager.backgroundPowerPromptShown = true
+        runCatching {
+            startActivity(
+                Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:$packageName")
+                )
+            )
         }
     }
 }

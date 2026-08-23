@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 from datetime import datetime
+from pathlib import Path
+from uuid import uuid4
 from typing import Any
 
+from . import config
 from .store import TZ_BEIJING, load_user, now_iso, save_user
 from .fcm import dispatch_notification
 
@@ -48,8 +53,51 @@ def _deliver_live_notification(user_id: str, item: dict[str, Any]) -> None:
 def publish_live_notification(user_id: str, item: dict[str, Any]) -> None:
     loop = _live_loop
     if not loop or loop.is_closed():
+        _queue_live_notification(user_id, item)
         return
     loop.call_soon_threadsafe(_deliver_live_notification, user_id, dict(item))
+
+
+def _notification_event_dir() -> Path:
+    path = config.DATA_DIR / "notification_events"
+    path.mkdir(parents=True, exist_ok=True)
+    path.chmod(0o700)
+    return path
+
+
+def _queue_live_notification(user_id: str, item: dict[str, Any]) -> None:
+    """Persist a short-lived cross-process event for muz-admin and workers."""
+    event_dir = _notification_event_dir()
+    event_id = f"{datetime.now(TZ_BEIJING).strftime('%Y%m%d%H%M%S%f')}-{uuid4().hex}"
+    temp = event_dir / f".{event_id}.tmp"
+    target = event_dir / f"{event_id}.json"
+    payload = {"user_id": str(user_id), "item": dict(item)}
+    temp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    os.chmod(temp, 0o600)
+    temp.replace(target)
+    os.chmod(target, 0o600)
+
+
+def drain_live_notification_events(limit: int = 100) -> int:
+    """Deliver queued events inside the API process and remove the spool files."""
+    delivered = 0
+    event_dir = _notification_event_dir()
+    for path in sorted(event_dir.glob("*.json"))[: max(1, min(int(limit), 500))]:
+        claimed = event_dir / f".{path.name}.{uuid4().hex}.processing"
+        try:
+            path.replace(claimed)
+        except FileNotFoundError:
+            continue
+        try:
+            payload = json.loads(claimed.read_text(encoding="utf-8"))
+            user_id = str(payload.get("user_id") or "")
+            item = payload.get("item")
+            if user_id and isinstance(item, dict):
+                _deliver_live_notification(user_id, item)
+                delivered += 1
+        finally:
+            claimed.unlink(missing_ok=True)
+    return delivered
 
 
 def push_notification(

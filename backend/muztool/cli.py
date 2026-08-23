@@ -7,6 +7,7 @@ from typing import Any
 from .config import DATA_DIR, ensure_dirs
 from . import appver
 from .invites import generate_invites, invite_stats
+from .notify import push_notification
 from .store import ensure_approvals, iter_users, public_user, resolve_user, save_user, set_student_password
 
 
@@ -86,6 +87,25 @@ def cmd_invite_stats(_: argparse.Namespace) -> None:
     _print(invite_stats())
 
 
+def cmd_message(args: argparse.Namespace) -> None:
+    user = _need(resolve_user(args.user), args.user)
+    body = " ".join(args.word).strip()
+    if not body:
+        raise SystemExit("提示内容不能为空")
+    if len(body) > 500:
+        raise SystemExit("提示内容不能超过 500 个字符")
+    title = str(args.title or "系统提示").strip() or "系统提示"
+    if len(title) > 80:
+        raise SystemExit("提示标题不能超过 80 个字符")
+    item = push_notification(user, title, body, "admin")
+    _print({
+        "success": True,
+        "user_id": user["id"],
+        "username": user["username"],
+        "notification_id": item["id"],
+    })
+
+
 def cmd_version(_: argparse.Namespace) -> None:
     _print(appver.load_version())
 
@@ -144,6 +164,12 @@ def build_parser() -> argparse.ArgumentParser:
     generate.set_defaults(func=cmd_generate_invites)
 
     sub.add_parser("invite-stats", help="查看邀请码库存统计").set_defaults(func=cmd_invite_stats)
+
+    message = sub.add_parser("message", help="向一名用户发送系统提示")
+    message.add_argument("user", help="用户名、学号或用户 ID")
+    message.add_argument("word", nargs="+", help="提示正文；多个参数会以空格连接")
+    message.add_argument("--title", default="系统提示", help="提示标题，默认“系统提示”")
+    message.set_defaults(func=cmd_message)
 
     version = sub.add_parser("version", help="查看当前客户端版本配置")
     version.set_defaults(func=cmd_version)

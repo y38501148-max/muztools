@@ -1,14 +1,14 @@
 # MuzTool（盐的工具箱）
 
-MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的个人工具箱。当前版本为 **v1.3.7**。
+MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的个人工具箱。当前版本为 **v1.3.8**。
 
-## v1.3.7 主要能力
+## v1.3.8 主要能力
 
 - **邀请码注册**：新账号必须填写一次性邀请码；无邀请码、邀请码无效或已使用时均无法注册。既有账号无需重新注册，默认保留全部功能权限。
 - **邀请码管理**：服务端可批量生成并加密保存邀请码；仅 `muzermat` 账号可在功能区随机领取一个尚未使用的邀请码。
 - **抖音续火花**：通过加密 Cookie 绑定抖音账号，缓存聊天好友与群聊列表，支持搜索、标准消息、自定义消息、单个会话测试发送、全部手动执行和定时执行；每日任务会在基础整点前后 5 分钟内选择一次随机时间。安全整改期间暂时只对 `muzermat` 开放。
 - **Tibo Reset 监测**：服务端启动时立即检查，之后每小时检查过去 24 小时的相关推特，缓存最多 100 条匹配历史；用户可独立开启或关闭系统推送。
-- **多端通知与热更新**：WebUI 与 Android 共用服务端状态；Android 后台通知服务使用 WebSocket 实时接收，并每 30 秒补拉一次未读消息；连接长时间无响应时自动重建。使用时需让应用保持在后台并允许系统通知。客户端保留 FCM 接入代码作为可选通道，但只有设备注册和真实设备验证成功后才能视为可用。应用可通过服务端版本元数据下载安装新版本。
+- **多端通知与热更新**：WebUI 与 Android 共用服务端状态；Android 后台通知使用前台服务、WebSocket、15 秒遗漏补拉、网络恢复重连、唤醒锁、任务移除重启和 WorkManager 看门狗。首次登录后会请求通知权限和忽略电池优化授权。客户端保留 FCM 接入代码作为可选通道，但只有设备注册和真实设备验证成功后才能视为可用。应用可通过服务端版本元数据下载安装新版本。
 
 ## 账号与凭据安全
 
@@ -60,6 +60,17 @@ muz-admin invite-stats
 
 批量生成不会把邀请码打印到终端。`muzermat` 登录 WebUI 或 Android 后，可在“功能区 → 获取邀请码”随机领取一个可用邀请码。
 
+## 管理员定向消息
+
+服务端管理员可通过用户 ID、用户名或学号向单个用户发送系统提示：
+
+```bash
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin message <用户标识> <提示正文>
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin message <用户标识> 多个 单词 会自动连接 --title "自定义标题"
+```
+
+命令不会在输出中回显正文。消息会写入用户通知列表，并通过 FCM、跨进程实时事件队列和 Android 后台补拉通道发送。
+
 ## Android 构建
 
 ```bash
@@ -68,20 +79,20 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-v1.3.7 使用：
+v1.3.8 使用：
 
-- `versionName = "1.3.7"`
-- `versionCode = 24`
+- `versionName = "1.3.8"`
+- `versionCode = 25`
 
 ## 热更新发布
 
 ```bash
 muz-admin version
-muz-admin set-version 1.3.7 \
-  --code 24 \
-  --title "MuzTool v1.3.7" \
-  --message "续火花每日执行时间增加前后 5 分钟随机偏移" \
-  --apk /path/to/muztools-1.3.7.apk
+muz-admin set-version 1.3.8 \
+  --code 25 \
+  --title "MuzTool v1.3.8" \
+  --message "修复 Android 后台通知保活并新增管理员定向消息命令" \
+  --apk /path/to/muztools-1.3.8.apk
 ```
 
 完整开发、测试、部署和双端同步要求见 `AGENTS.md`；管理命令说明见 `MUZ-ADMIN.md`。

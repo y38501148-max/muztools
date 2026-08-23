@@ -18,6 +18,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_REMEMBER_PASSWORD = "remember_password"
         private const val KEY_AUTO_LOGIN = "auto_login"
         private const val KEY_DELIVERED_NOTIFICATIONS = "delivered_notifications"
+        private const val KEY_BACKGROUND_POWER_PROMPT_SHOWN = "background_power_prompt_shown"
         private const val DEFAULT_SERVER_URL = "http://150.138.79.9:10023"
         private const val LEGACY_SERVER_URL = "http://150.138.79.9:18787"
     }
@@ -73,6 +74,10 @@ class PreferencesManager(context: Context) {
     var autoLogin: Boolean
         get() = prefs.getBoolean(KEY_AUTO_LOGIN, false)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_LOGIN, value).apply()
+
+    var backgroundPowerPromptShown: Boolean
+        get() = prefs.getBoolean(KEY_BACKGROUND_POWER_PROMPT_SHOWN, false)
+        set(value) = prefs.edit().putBoolean(KEY_BACKGROUND_POWER_PROMPT_SHOWN, value).apply()
 
     val deviceId: String
         get() {

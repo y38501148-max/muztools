@@ -5,12 +5,9 @@ import android.content.Context
 import android.content.Intent
 import com.muzermat.muztools.data.local.PreferencesManager
 
-class BootReceiver : BroadcastReceiver() {
+class NotificationServiceRestartReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        if (
-            intent?.action in setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED, Intent.ACTION_USER_UNLOCKED) &&
-            !PreferencesManager(context).token.isNullOrBlank()
-        ) {
+        if (!PreferencesManager(context).token.isNullOrBlank()) {
             MuzNotificationService.start(context)
             NotificationWatchdogWorker.schedule(context)
         }
