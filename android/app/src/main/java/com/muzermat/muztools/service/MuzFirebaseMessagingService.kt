@@ -17,6 +17,7 @@ class MuzFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
+        if (!NotificationAccess.isEnabled(this)) return
         val data = message.data
         val title = data["title"] ?: message.notification?.title ?: "盐的工具箱"
         val body = data["body"] ?: message.notification?.body ?: "收到一条新通知"
