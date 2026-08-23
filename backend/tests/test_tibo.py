@@ -132,3 +132,29 @@ def test_history_cache_keeps_latest_100_reset_posts(tmp_path, monkeypatch):
     assert history["count"] == 100
     assert history["items"][0]["id"] == "10119"
     assert history["items"][-1]["id"] == "10020"
+
+
+def test_scheduler_checks_tibo_immediately_and_hourly(monkeypatch):
+    from muztool import scheduler as scheduler_module
+
+    calls = []
+
+    class FakeScheduler:
+        running = False
+
+        def add_job(self, func, trigger, **kwargs):
+            calls.append((func, trigger, kwargs))
+
+        def start(self):
+            calls.append(("start", "", {}))
+
+    fake = FakeScheduler()
+    monkeypatch.setattr(scheduler_module, "scheduler", fake)
+    scheduler_module.start_scheduler()
+
+    tibo_job = next(item for item in calls if item[2].get("id") == "tibo_monitor")
+    assert tibo_job[1] == "interval"
+    assert tibo_job[2]["hours"] == 1
+    assert tibo_job[2]["next_run_time"].tzinfo is not None
+    assert tibo_job[2]["max_instances"] == 1
+    assert tibo_job[2]["coalesce"] is True

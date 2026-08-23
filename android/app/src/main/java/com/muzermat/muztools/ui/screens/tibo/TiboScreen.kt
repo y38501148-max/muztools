@@ -58,7 +58,7 @@ fun TiboScreen(viewModel: TiboViewModel) {
                 Card(shape = RoundedCornerShape(18.dp)) {
                     Column(Modifier.padding(16.dp)) {
                         Text("历史推特缓存", fontWeight = FontWeight.Bold)
-                        Text("后端每两小时检查一次，仅保留包含 reset 的推特，最多 100 条；历史查看不受推送开关影响。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("后端启动时立即检查，之后每小时检查过去 24 小时的推特；仅标记并保留包含 reset 的记录，最多 100 条。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(8.dp))
                         Text("最近检查：${formatTiboTime(state.lastChecked).ifBlank { "尚未检查" }}", style = MaterialTheme.typography.labelSmall)
                     }

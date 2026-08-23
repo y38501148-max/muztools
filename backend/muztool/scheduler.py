@@ -175,7 +175,7 @@ async def tibo_monitor() -> None:
         await check_tibo_updates()
     except Exception:
         # A failed X request must not affect sign-in or spark scheduling. The
-        # next two-hour run will retry without marking unread posts as seen.
+        # next hourly run will retry without marking unread posts as seen.
         logger.exception("Tibo X monitor failed")
 
 def start_scheduler() -> None:
@@ -187,7 +187,8 @@ def start_scheduler() -> None:
     scheduler.add_job(
         tibo_monitor,
         "interval",
-        hours=2,
+        hours=1,
+        next_run_time=datetime.now(TZ_BEIJING),
         id="tibo_monitor",
         replace_existing=True,
         max_instances=1,

@@ -1,13 +1,13 @@
 # MuzTool（盐的工具箱）
 
-MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的个人工具箱。当前版本为 **v1.3.2**。
+MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的个人工具箱。当前版本为 **v1.3.3**。
 
 ## v1.3.0 主要能力
 
 - **邀请码注册**：新账号必须填写一次性邀请码；无邀请码、邀请码无效或已使用时均无法注册。既有账号无需重新注册，默认保留全部功能权限。
 - **邀请码管理**：服务端可批量生成并加密保存邀请码；仅 `muzermat` 账号可在功能区随机领取一个尚未使用的邀请码。
 - **抖音续火花**：通过 Cookie 绑定抖音账号，缓存聊天好友与群聊列表，支持搜索、标准消息、自定义消息、手动执行和定时执行。
-- **Tibo Reset 监测**：服务端每两小时检查一次相关推特，缓存最多 100 条匹配历史；用户可独立开启或关闭系统推送。
+- **Tibo Reset 监测**：服务端启动时立即检查，之后每小时检查过去 24 小时的相关推特，缓存最多 100 条匹配历史；用户可独立开启或关闭系统推送。
 - **多端通知与热更新**：WebUI 与 Android 共用服务端状态；Android 支持 FCM 系统推送，未配置 Firebase 时回退 WebSocket/前台通知，并可通过服务端版本元数据下载安装新版本。
 
 ## 账号与凭据安全
@@ -65,20 +65,20 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-v1.3.2 使用：
+v1.3.3 使用：
 
-- `versionName = "1.3.2"`
-- `versionCode = 19`
+- `versionName = "1.3.3"`
+- `versionCode = 20`
 
 ## 热更新发布
 
 ```bash
 muz-admin version
-muz-admin set-version 1.3.2 \
-  --code 19 \
-  --title "MuzTool v1.3.2" \
+muz-admin set-version 1.3.3 \
+  --code 20 \
+  --title "MuzTool v1.3.3" \
   --message "FCM 后台推送、邀请码注册与凭据加密" \
-  --apk /path/to/muztools-1.3.2.apk
+  --apk /path/to/muztools-1.3.3.apk
 ```
 
 完整开发、测试、部署和双端同步要求见 `AGENTS.md`；管理命令说明见 `MUZ-ADMIN.md`。

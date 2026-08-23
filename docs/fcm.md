@@ -1,6 +1,6 @@
 # FCM 后台推送配置
 
-MuzTool v1.3.2 完成 Firebase Cloud Messaging（FCM）通道。FCM 使用 Android 系统级推送服务，应用进程被系统回收后仍可以投递通知；WebSocket 和本地通知历史仍保留作为回退。
+MuzTool v1.3.3 完成 Firebase Cloud Messaging（FCM）通道。FCM 使用 Android 系统级推送服务，应用进程被系统回收后仍可以投递通知；WebSocket 和本地通知历史仍保留作为回退。
 
 ## 必需文件
 

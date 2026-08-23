@@ -51,7 +51,11 @@ class AuthViewModel(
 
     init {
         val state = _uiState.value
-        if (!state.isLoggedIn && state.autoLogin && state.username.isNotBlank() && state.password.isNotBlank()) {
+        if (state.isLoggedIn) {
+            // App upgrades keep the existing session, so refresh FCM even when
+            // the login form is skipped and handleAuthResult is not called.
+            onAuthenticated()
+        } else if (state.autoLogin && state.username.isNotBlank() && state.password.isNotBlank()) {
             login()
         }
     }

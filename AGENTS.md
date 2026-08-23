@@ -125,7 +125,7 @@ muz-tool/
 ### Tibo 监测
 
 - 账号 `@thsottiaux`，关键词不区分大小写匹配 `reset`。
-- 每两小时检查，最多缓存 100 条。
+- 服务启动时立即检查，之后每小时检查过去 24 小时，最多缓存 100 条包含 `reset` 的记录。
 - 仅为打开 Tibo 开关的用户生成通知；第一次成功检查只建立 24 小时基线。
 
 ### FCM 后台推送
@@ -167,7 +167,7 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.1 为 `versionCode 18`；v1.3.0 为 `versionCode 17`。
+发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.3 为 `versionCode 20`；v1.3.2 为 `versionCode 19`。
 
 ## 服务端部署
 

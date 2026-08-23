@@ -1278,7 +1278,7 @@
         <div class="row-between">
           <div>
             <h3>历史推特缓存</h3>
-            <p class="muted-sm">后端每两小时检查一次，只展示包含 reset 的推特，最多保留 100 条。查看历史不受推送开关影响。</p>
+            <p class="muted-sm">后端启动时立即检查，之后每小时检查过去 24 小时的推特；仅标记并保留包含 reset 的记录，最多 100 条。查看历史不受推送开关影响。</p>
           </div>
           <span class="badge ok">${items.length} 条</span>
         </div>
