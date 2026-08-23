@@ -162,6 +162,50 @@ def test_manual_spark_runs_sync_playwright_worker_off_event_loop(client_and_user
     assert response.json()["success"] is True
 
 
+def test_single_target_spark_uses_configured_target_in_worker_thread(client_and_user, monkeypatch):
+    client, user = client_and_user
+    enable_admin_douyin(client, user)
+    target = {
+        "name": "测试好友",
+        "mode": "custom",
+        "message": "单独测试",
+        "conversation_id": "direct-1",
+        "conversation_short_id": "short-1",
+        "conversation_type": "direct",
+    }
+    user["douyin"]["targets"] = [target]
+    store.save_user(user)
+    captured = {}
+
+    def fake_run_spark(worker_user, *, targets_override=None):
+        with pytest.raises(RuntimeError):
+            asyncio.get_running_loop()
+        captured["user"] = worker_user["username"]
+        captured["targets"] = targets_override
+        return {"success": True, "results": [{"ok": True, "target": "测试好友"}]}
+
+    monkeypatch.setattr(api_module, "run_spark", fake_run_spark)
+    response = client.post("/api/douyin/run-target", json={"target_key": "id:direct-1"})
+    assert response.status_code == 200
+    assert response.json()["single_target"] is True
+    assert response.json()["target"] == "测试好友"
+    assert captured == {"user": "muzermat", "targets": [target]}
+
+
+def test_single_target_spark_rejects_unconfigured_target(client_and_user, monkeypatch):
+    client, user = client_and_user
+    enable_admin_douyin(client, user)
+    user["douyin"]["targets"] = [
+        {"name": "已配置好友", "conversation_id": "direct-1", "conversation_type": "direct"}
+    ]
+    store.save_user(user)
+    monkeypatch.setattr(api_module, "run_spark", lambda *_args, **_kwargs: pytest.fail("不应执行发送"))
+
+    response = client.post("/api/douyin/run-target", json={"target_key": "id:other"})
+    assert response.status_code == 404
+    assert "目标不存在" in response.json()["detail"]
+
+
 def test_friend_list_uses_cache_until_explicit_refresh(client_and_user, monkeypatch):
     client, user = client_and_user
     user["username"] = "muzermat"
@@ -578,8 +622,31 @@ def test_manual_douyin_run_is_rate_limited(client_and_user, monkeypatch):
     assert client.post("/api/douyin/run").status_code == 429
 
 
+def test_single_target_and_full_run_share_rate_limit(client_and_user, monkeypatch):
+    client, user = client_and_user
+    enable_admin_douyin(client, user)
+    user["douyin"]["targets"] = [
+        {"name": "测试好友", "conversation_id": "direct-1", "conversation_type": "direct"}
+    ]
+    store.save_user(user)
+    monkeypatch.setattr(api_module, "run_spark", lambda _user, **_kwargs: {"success": True, "results": []})
+
+    assert client.post("/api/douyin/run").status_code == 200
+    assert client.post("/api/douyin/run-target", json={"target_key": "id:direct-1"}).status_code == 200
+    assert client.post("/api/douyin/run").status_code == 200
+    assert client.post("/api/douyin/run-target", json={"target_key": "id:direct-1"}).status_code == 429
+
+
 def test_web_aes_fallback_asset_is_served(client_and_user):
     client, _user = client_and_user
     response = client.get("/assets/aes-gcm.min.js")
     assert response.status_code == 200
     assert "muzAesGcmEncrypt" in response.text
+
+
+def test_web_exposes_single_target_spark_test_action(client_and_user):
+    client, _user = client_and_user
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'data-action="run-spark-target"' in response.text
+    assert 'api("/api/douyin/run-target"' in response.text

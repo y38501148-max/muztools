@@ -1664,7 +1664,10 @@
               <p class="muted-sm" style="margin-top: 3px;">${target.mode === "custom" ? "自定义模式" : "标准模式：使用默认续火花文案"}</p>
               ${status.last_attempt ? `<p class="muted-sm" style="margin-top:3px;">最近结果：${esc(status.status || "未知")} · ${esc(String(status.last_attempt).replace("T", " ").split("+")[0])}${status.error ? ` · ${esc(status.error)}` : ""}</p>` : ""}
             </div>
-            <button type="button" class="btn ghost sm" data-action="remove-spark-target" data-index="${index}">移除</button>
+            <div class="row" style="gap: 6px; flex: 0 0 auto;">
+              <button type="button" class="btn ghost sm" data-action="run-spark-target" data-index="${index}" ${stable ? "" : "disabled"}>单独测试</button>
+              <button type="button" class="btn ghost sm" data-action="remove-spark-target" data-index="${index}">移除</button>
+            </div>
           </div>
           <div class="row" style="margin-top: 10px; align-items: stretch; flex-wrap: wrap;">
             <select class="spark-target-mode" data-index="${index}" style="flex: 0 0 130px;">
@@ -1677,6 +1680,32 @@
         </div>
       </div>`;
     }).join("");
+  }
+
+  function readSparkConfigFromForm() {
+    const defaultMessage = ($("spark-default-msg")?.value || "").trim();
+    const hour = Number($("spark-hour")?.value || 9);
+    const targets = Array.from(document.querySelectorAll(".spark-target-row")).map((row) => {
+      const index = Number(row.dataset.index);
+      const current = state.sparkTargets[index] || {};
+      const mode = row.querySelector(".spark-target-mode")?.value === "custom" ? "custom" : "standard";
+      const message = mode === "custom" ? (row.querySelector(".spark-target-message")?.value || "").trim() : "";
+      return normalizeSparkTarget({
+        name: current.name || "",
+        mode,
+        message,
+        conversation_id: current.conversation_id || "",
+        conversation_short_id: current.conversation_short_id || "",
+        conversation_type: current.conversation_type || ""
+      });
+    }).filter(target => target.name);
+    state.sparkTargets = targets;
+    return {
+      enabled: Boolean(state.douyinSession?.douyin?.enabled ?? state.douyinSession?.enabled),
+      default_message: defaultMessage,
+      hour,
+      targets
+    };
   }
 
   function filteredDouyinFriends() {
@@ -2489,34 +2518,42 @@
     if (action === "save-spark-config") {
       const enable = actionBtn.dataset.enable === "true";
       await withButtonLoading(actionBtn, async () => {
-        const defaultMsg = $("spark-default-msg").value.trim();
-        const hour = Number($("spark-hour").value || 9);
-        const targets = Array.from(document.querySelectorAll(".spark-target-row")).map((row) => {
-          const index = Number(row.dataset.index);
-          const current = state.sparkTargets[index] || {};
-          const mode = row.querySelector(".spark-target-mode")?.value === "custom" ? "custom" : "standard";
-          const message = mode === "custom" ? (row.querySelector(".spark-target-message")?.value || "").trim() : "";
-          return {
-            name: current.name || "",
-            mode,
-            message,
-            conversation_id: current.conversation_id || "",
-            conversation_short_id: current.conversation_short_id || "",
-            conversation_type: current.conversation_type || ""
-          };
-        }).filter(target => target.name);
-        state.sparkTargets = targets.map(normalizeSparkTarget);
+        const config = readSparkConfigFromForm();
+        config.enabled = enable;
 
         await api("/api/douyin/config", {
           method: "PUT",
-          body: {
-            enabled: enable,
-            default_message: defaultMsg,
-            hour,
-            targets
-          }
+          body: config
         });
         toast("火花配置已成功保存！");
+        await refreshAllData();
+        await renderPage();
+      });
+      return;
+    }
+
+    // 仅向当前配置中的一个稳定会话发送真实测试消息
+    if (action === "run-spark-target") {
+      const index = Number(actionBtn.dataset.index);
+      const visibleTarget = state.sparkTargets[index];
+      if (!visibleTarget?.conversation_id || !["direct", "group"].includes(visibleTarget.conversation_type)) {
+        toast("该目标缺少稳定会话标识，请重新添加");
+        return;
+      }
+      const visibleMessage = visibleTarget.mode === "custom"
+        ? visibleTarget.message
+        : ($("spark-default-msg")?.value || "续火花").trim();
+      if (!confirm(`将向“${visibleTarget.name}”真实发送一条“${visibleMessage || "续火花"}”，确定继续吗？`)) return;
+      await withButtonLoading(actionBtn, async () => {
+        const config = readSparkConfigFromForm();
+        const target = config.targets[index];
+        if (!target?.conversation_id) throw new Error("目标状态已变化，请刷新页面后重试");
+        await api("/api/douyin/config", { method: "PUT", body: config });
+        const res = await api("/api/douyin/run-target", {
+          method: "POST",
+          body: { target_key: sparkConversationKey(target) }
+        });
+        toast(res.message || `已完成“${target.name}”的单独测试`);
         await refreshAllData();
         await renderPage();
       });

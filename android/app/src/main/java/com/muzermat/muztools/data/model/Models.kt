@@ -162,6 +162,11 @@ data class DouyinSessionRequest(
 )
 
 @Serializable
+data class DouyinRunTargetRequest(
+    @SerialName("target_key") val targetKey: String
+)
+
+@Serializable
 data class DouyinTargetStatus(
     val name: String = "",
     val status: String = "",

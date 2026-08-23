@@ -22,6 +22,7 @@ from .douyin import (
     normalize_target,
     run_spark,
     list_douyin_friends,
+    target_identity,
     validate_douyin_cookies,
     validate_spark_targets,
 )
@@ -905,6 +906,49 @@ async def douyin_run(request: Request, user: dict[str, Any] = Depends(current_us
     save_user(user)
     result["success"] = bool(result.get("success"))
     result["message"] = "续火花完成" if result.get("success") else "续火花未全部成功"
+    return result
+
+
+@app.post("/api/douyin/run-target")
+async def douyin_run_target(
+    request: Request,
+    payload: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Send one real test message to one already-configured stable conversation."""
+    _require_douyin_access(user)
+    # Share the same budget with the full manual run so the single-target
+    # helper cannot be used to bypass the manual automation rate limit.
+    _rate_limit(request, "douyin-run", str(user.get("id") or ""), 3, 3600)
+    target_key = str(payload.get("target_key") or "").strip()
+    if not target_key or len(target_key) > 300:
+        raise HTTPException(status_code=400, detail="请选择一个有效的续火花目标")
+
+    cfg = user.setdefault("douyin", {})
+    try:
+        configured = validate_spark_targets(
+            [item for item in cfg.get("targets") or [] if isinstance(item, dict)],
+            require_identity=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    target = next((item for item in configured if target_identity(item) == target_key), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="该续火花目标不存在，请刷新页面后重试")
+
+    try:
+        result = await asyncio.to_thread(run_spark, user, targets_override=[target])
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    save_user(user)
+    result["success"] = bool(result.get("success"))
+    result["single_target"] = True
+    result["target"] = target["name"]
+    result["message"] = (
+        f"已向“{target['name']}”发送测试续火花消息"
+        if result.get("success")
+        else f"向“{target['name']}”发送测试消息失败"
+    )
     return result
 
 

@@ -340,6 +340,9 @@ class ApiClient(private val prefs: PreferencesManager) {
     suspend fun runDouyinSpark(): Result<GenericApiResponse> =
         executePost("/api/douyin/run", emptyMap<String, String>())
 
+    suspend fun runDouyinSparkTarget(targetKey: String): Result<GenericApiResponse> =
+        executePost("/api/douyin/run-target", DouyinRunTargetRequest(targetKey))
+
     suspend fun getTiboHistory(): Result<TiboHistoryResponse> =
         executeGet("/api/tibo/history")
 

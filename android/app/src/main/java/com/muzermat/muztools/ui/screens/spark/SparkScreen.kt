@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -37,6 +39,7 @@ fun SparkScreen(viewModel: SparkViewModel) {
     var cookieInput by remember { mutableStateOf("") }
     var showAddFriendDialog by remember { mutableStateOf(false) }
     var editingTarget by remember { mutableStateOf<SparkTarget?>(null) }
+    var pendingTestTarget by remember { mutableStateOf<SparkTarget?>(null) }
 
     LaunchedEffect(Unit) { viewModel.loadData() }
     LaunchedEffect(viewModel.messageFlow) {
@@ -146,7 +149,7 @@ fun SparkScreen(viewModel: SparkViewModel) {
                                 onClick = { showCookieGuideDialog = true },
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Icon(Icons.Default.HelpOutline, null, Modifier.size(18.dp))
+                                Icon(Icons.AutoMirrored.Filled.HelpOutline, null, Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text("获取教程")
                             }
@@ -294,6 +297,9 @@ fun SparkScreen(viewModel: SparkViewModel) {
                         target = target,
                         defaultMessage = uiState.config.defaultMessage,
                         status = sessionState?.targetStatus?.get(target.identityKey()),
+                        isTesting = uiState.runningTargetKey == target.identityKey(),
+                        testEnabled = uiState.session.valid && !uiState.isRunningSpark && uiState.runningTargetKey.isBlank(),
+                        onTest = { pendingTestTarget = target },
                         onEdit = { editingTarget = target },
                         onDelete = { viewModel.removeTarget(target) }
                     )
@@ -304,7 +310,7 @@ fun SparkScreen(viewModel: SparkViewModel) {
                 Spacer(Modifier.height(20.dp))
                 FilledTonalButton(
                     onClick = viewModel::runSparkNow,
-                    enabled = !uiState.isRunningSpark && uiState.session.valid && targetsStable,
+                    enabled = !uiState.isRunningSpark && uiState.runningTargetKey.isBlank() && uiState.session.valid && targetsStable,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(48.dp)
                 ) {
                     if (uiState.isRunningSpark) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -332,6 +338,30 @@ fun SparkScreen(viewModel: SparkViewModel) {
             defaultMessage = uiState.config.defaultMessage,
             onSave = { mode, message -> viewModel.updateTarget(target, mode, message); editingTarget = null },
             onDismiss = { editingTarget = null }
+        )
+    }
+
+    pendingTestTarget?.let { target ->
+        val testMessage = if (target.resolvedMode() == "custom") {
+            target.message.orEmpty()
+        } else {
+            uiState.config.defaultMessage
+        }.ifBlank { "续火花" }
+        AlertDialog(
+            onDismissRequest = { pendingTestTarget = null },
+            title = { Text("发送单个测试") },
+            text = {
+                Text("将向“${target.name}”真实发送一条“$testMessage”。该操作会占用一次手动发送额度，确定继续吗？")
+            },
+            confirmButton = {
+                Button(onClick = {
+                    pendingTestTarget = null
+                    viewModel.runSparkTarget(target)
+                }) { Text("确认发送") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingTestTarget = null }) { Text("取消") }
+            }
         )
     }
 
@@ -524,6 +554,9 @@ private fun SparkTargetCard(
     target: SparkTarget,
     defaultMessage: String,
     status: DouyinTargetStatus?,
+    isTesting: Boolean,
+    testEnabled: Boolean,
+    onTest: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -567,6 +600,19 @@ private fun SparkTargetCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2
                     )
+                }
+                TextButton(
+                    onClick = onTest,
+                    enabled = testEnabled && target.conversationId.isNotBlank() && target.conversationType in setOf("direct", "group"),
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp)
+                ) {
+                    if (isTesting) {
+                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, Modifier.size(15.dp))
+                    }
+                    Spacer(Modifier.width(5.dp))
+                    Text(if (isTesting) "正在测试发送..." else "向此会话发送测试", style = MaterialTheme.typography.labelMedium)
                 }
             }
             IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "编辑") }

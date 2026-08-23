@@ -129,6 +129,7 @@ muz-tool/
 - 点击会话后必须重新读取活动会话 ID、类型和名称并完全一致；任一稳定标识无法读取时停止发送。
 - 按下 Enter 后必须确认同文案消息数量增加；输入框清空本身不能作为成功依据。
 - 每个用户只能有一个续火花执行实例；目标最多 10 个、消息最多 200 字，Cookie 导入、好友刷新、配置与手动执行均有限流。
+- 单目标测试发送只允许选择已经保存在配置中的稳定会话；`POST /api/douyin/run-target` 与完整手动执行共享每小时 3 次额度，并复用同一用户执行锁。
 - 自动任务按目标记录当日进度，只重试尚未成功且明确可重试的目标；安全验证、会话失效、页面结构变化、结果不明确或未分类错误均熔断当天任务。
 - 每次浏览器执行结束后保存刷新后的 Cookie；重新导入 Cookie 时关闭自动任务并清空旧目标，防止跨账号误发。
 
@@ -177,7 +178,7 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.5 为 `versionCode 22`；v1.3.4 为 `versionCode 21`。
+发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.6 为 `versionCode 23`；v1.3.5 为 `versionCode 22`。
 
 ## 服务端部署
 
@@ -210,14 +211,14 @@ ssh server2 'cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data .ven
 ## Android 热更新
 
 ```bash
-cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.5.apk
-scp release/muztools-1.3.5.apk server2:/tmp/
+cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.6.apk
+scp release/muztools-1.3.6.apk server2:/tmp/
 ssh server2 \
   "cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data \
-   .venv/bin/muz-admin set-version 1.3.5 --code 22 \
-   --title 'MuzTool v1.3.5' \
-   --message '续火花 Cookie 加密、稳定会话校验、安全停止与按目标重试' \
-   --apk /tmp/muztools-1.3.5.apk"
+   .venv/bin/muz-admin set-version 1.3.6 --code 23 \
+   --title 'MuzTool v1.3.6' \
+   --message '新增单个好友续火花测试发送，并保持双端安全限制' \
+   --apk /tmp/muztools-1.3.6.apk"
 ```
 
 除非用户明确要求，不使用 `--force`，也不提高 `min_version_code`。

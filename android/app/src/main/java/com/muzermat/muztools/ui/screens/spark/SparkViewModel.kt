@@ -36,6 +36,7 @@ data class SparkUiState(
     val isSubmittingCookie: Boolean = false,
     val isSavingConfig: Boolean = false,
     val isRunningSpark: Boolean = false,
+    val runningTargetKey: String = "",
     val showQrLogin: Boolean = false,
     val qrLoginId: String = "",
     val qrImage: String = "",
@@ -287,8 +288,9 @@ class SparkViewModel(
     }
 
     fun runSparkNow() {
+        if (_uiState.value.runningTargetKey.isNotBlank()) return
+        _uiState.update { it.copy(isRunningSpark = true) }
         viewModelScope.launch {
-            _uiState.update { it.copy(isRunningSpark = true) }
             apiClient.runDouyinSpark().fold(
                 onSuccess = { response ->
                     _uiState.update { it.copy(isRunningSpark = false) }
@@ -298,6 +300,39 @@ class SparkViewModel(
                 onFailure = { error ->
                     _uiState.update { it.copy(isRunningSpark = false) }
                     _messageFlow.emit("执行失败: ${error.message}")
+                }
+            )
+        }
+    }
+
+    fun runSparkTarget(target: SparkTarget) {
+        val targetKey = target.identityKey()
+        if (
+            _uiState.value.isRunningSpark ||
+            _uiState.value.runningTargetKey.isNotBlank() ||
+            target.conversationId.isBlank() ||
+            target.conversationType !in setOf("direct", "group")
+        ) return
+        _uiState.update { it.copy(runningTargetKey = targetKey) }
+        viewModelScope.launch {
+            // Save the currently visible default/custom message before the
+            // real test send, so the message being tested matches the UI.
+            val saveResult = apiClient.updateDouyinConfig(_uiState.value.config)
+            if (saveResult.isFailure) {
+                _uiState.update { it.copy(runningTargetKey = "") }
+                _messageFlow.emit("保存配置失败，未发送测试消息: ${saveResult.exceptionOrNull()?.message}")
+                return@launch
+            }
+
+            apiClient.runDouyinSparkTarget(targetKey).fold(
+                onSuccess = { response ->
+                    _uiState.update { it.copy(runningTargetKey = "") }
+                    _messageFlow.emit(response.message ?: "单个好友测试发送完成")
+                    loadData(isRefresh = true)
+                },
+                onFailure = { error ->
+                    _uiState.update { it.copy(runningTargetKey = "") }
+                    _messageFlow.emit("测试发送失败: ${error.message}")
                 }
             )
         }
