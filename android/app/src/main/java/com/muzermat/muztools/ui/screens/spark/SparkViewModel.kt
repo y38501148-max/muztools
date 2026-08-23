@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.muzermat.muztools.data.api.ApiClient
 import com.muzermat.muztools.data.model.DouyinConfig
+import com.muzermat.muztools.data.model.DouyinFriend
 import com.muzermat.muztools.data.model.DouyinQrResponse
 import com.muzermat.muztools.data.model.DouyinSessionResponse
 import com.muzermat.muztools.data.model.SparkTarget
@@ -18,12 +19,18 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+
 data class SparkUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val session: DouyinSessionResponse = DouyinSessionResponse(),
     val config: DouyinConfig = DouyinConfig(),
-    val studentStatus: String = "unbound",
+    val friends: List<DouyinFriend> = emptyList(),
+    val friendsLoaded: Boolean = false,
+    val isLoadingFriends: Boolean = false,
+    val friendsCachedAt: String = "",
+    val friendSearchQuery: String = "",
+    val friendError: String = "",
     val isSubmittingCookie: Boolean = false,
     val isSavingConfig: Boolean = false,
     val isRunningSpark: Boolean = false,
@@ -58,71 +65,77 @@ class SparkViewModel(
                 if (isRefresh) it.copy(isRefreshing = true) else it.copy(isLoading = true)
             }
 
-            val studentRes = apiClient.getStudentStatus()
-            val sparkApproved = studentRes.getOrNull()?.let {
-                it.sparkStatus == "approved" || it.approvals.spark == "approved"
-            } == true
-            val sessionRes = if (sparkApproved) {
-                apiClient.getDouyinSession()
-            } else {
-                Result.success(DouyinSessionResponse())
-            }
+            val sessionRes = apiClient.getDouyinSession()
+            val loadedSession = sessionRes.getOrNull()
             _uiState.update { current ->
                 current.copy(
                     isLoading = false,
                     isRefreshing = false,
-                    studentStatus = studentRes.getOrNull()?.let { it.sparkStatus.ifBlank { it.approvals.spark } } ?: current.studentStatus,
-                    session = sessionRes.getOrDefault(current.session)
+                    session = loadedSession ?: current.session,
+                    config = loadedSession?.resolvedConfig() ?: current.config
                 )
+            }
+            if (loadedSession?.valid == true) {
+                loadFriends(refresh = false, announce = false)
             }
         }
     }
 
-    private fun ensureApproved(): Boolean {
-        val approved = _uiState.value.studentStatus == "approved" || _uiState.value.studentStatus == "已通过"
-        if (!approved) {
-            viewModelScope.launch { _messageFlow.emit("抖音续火花尚未通过审批") }
+    fun loadFriends(refresh: Boolean = false, announce: Boolean = true) {
+        if (!_uiState.value.session.valid) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingFriends = true, friendError = "") }
+            val result = apiClient.getDouyinFriends(refresh)
+            result.fold(
+                onSuccess = { response ->
+                    _uiState.update {
+                        it.copy(
+                            isLoadingFriends = false,
+                            friendsLoaded = true,
+                            friends = response.friends,
+                            friendsCachedAt = response.cachedAt,
+                            friendError = ""
+                        )
+                    }
+                    if (announce) {
+                        _messageFlow.emit(if (refresh) "好友列表已刷新" else "已载入好友列表")
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoadingFriends = false,
+                            friendsLoaded = true,
+                            friendError = error.message ?: "好友列表读取失败"
+                        )
+                    }
+                    if (announce) _messageFlow.emit("好友列表读取失败: ${error.message}")
+                }
+            )
         }
-        return approved
+    }
+
+    fun setFriendSearchQuery(query: String) {
+        _uiState.update { it.copy(friendSearchQuery = query) }
     }
 
     fun startQrLogin() {
-        if (!ensureApproved()) return
         qrJob?.cancel()
         qrJob = viewModelScope.launch {
             _uiState.update {
-                it.copy(
-                    showQrLogin = true,
-                    qrLoading = true,
-                    qrError = "",
-                    qrImage = "",
-                    qrStatus = "pending",
-                    qrLoginId = ""
-                )
+                it.copy(showQrLogin = true, qrLoading = true, qrError = "", qrImage = "", qrStatus = "pending", qrLoginId = "")
             }
-            val res = apiClient.startDouyinQr()
-            res.fold(
+            apiClient.startDouyinQr().fold(
                 onSuccess = { qr ->
                     val ready = qr.qrImage.isNotBlank() || qr.status in listOf("failed", "expired", "cancelled", "success")
                     _uiState.update {
-                        it.copy(
-                            qrLoginId = qr.loginId,
-                            qrImage = qr.qrImage,
-                            qrStatus = qr.status,
-                            qrError = qr.error,
-                            qrLoading = !ready && qr.qrImage.isBlank()
-                        )
+                        it.copy(qrLoginId = qr.loginId, qrImage = qr.qrImage, qrStatus = qr.status, qrError = qr.error, qrLoading = !ready && qr.qrImage.isBlank())
                     }
-                    if (qr.status == "success" || qr.valid) {
-                        onQrSuccess(qr)
-                    } else if (qr.status !in listOf("failed", "expired", "cancelled")) {
-                        pollQr(qr.loginId)
-                    }
+                    if (qr.status == "success" || qr.valid) onQrSuccess(qr)
+                    else if (qr.status !in listOf("failed", "expired", "cancelled")) pollQr(qr.loginId)
                 },
-                onFailure = { err ->
-                    _uiState.update {
-                        it.copy(qrLoading = false, qrError = err.message ?: "无法生成二维码", qrStatus = "failed")
-                    }
+                onFailure = { error ->
+                    _uiState.update { it.copy(qrLoading = false, qrError = error.message ?: "无法生成二维码", qrStatus = "failed") }
                 }
             )
         }
@@ -152,11 +165,7 @@ class SparkViewModel(
 
     private suspend fun onQrSuccess(qr: DouyinQrResponse) {
         _uiState.update {
-            it.copy(
-                qrStatus = "success",
-                qrLoading = false,
-                session = DouyinSessionResponse(valid = true, nickname = qr.nickname.ifBlank { "抖音用户" })
-            )
+            it.copy(qrStatus = "success", qrLoading = false, session = DouyinSessionResponse(valid = true, nickname = qr.nickname.ifBlank { "抖音用户" }))
         }
         _messageFlow.emit("抖音扫码登录成功")
         delay(600)
@@ -171,93 +180,108 @@ class SparkViewModel(
         if (loginId.isNotBlank() && _uiState.value.qrStatus in listOf("pending", "scanned")) {
             viewModelScope.launch { apiClient.cancelDouyinQr(loginId) }
         }
-        _uiState.update {
-            it.copy(showQrLogin = false, qrLoading = false, qrError = "", qrStatus = "pending")
-        }
+        _uiState.update { it.copy(showQrLogin = false, qrLoading = false, qrError = "", qrStatus = "pending") }
     }
 
     fun submitCookies(cookieJson: String) {
-        if (!ensureApproved()) return
         if (cookieJson.isBlank()) {
             viewModelScope.launch { _messageFlow.emit("Cookie 不能为空") }
             return
         }
-
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmittingCookie = true) }
-            val res = apiClient.submitDouyinSession(cookieJson.trim())
+            val result = apiClient.submitDouyinSession(cookieJson.trim())
             _uiState.update { it.copy(isSubmittingCookie = false) }
-
-            res.fold(
+            result.fold(
                 onSuccess = { session ->
-                    _uiState.update { it.copy(session = session) }
-                    _messageFlow.emit(if (session.valid) "抖音 Session 校验成功" else "Session 状态已更新")
+                    _uiState.update {
+                        it.copy(session = session, config = session.resolvedConfig(), friends = emptyList(), friendsLoaded = false, friendsCachedAt = "")
+                    }
+                    _messageFlow.emit(if (session.valid) "抖音 Cookie 校验成功" else "Cookie 状态已更新")
+                    loadData(isRefresh = true)
                 },
-                onFailure = { err ->
-                    _messageFlow.emit("提交失败: ${err.message}")
-                }
+                onFailure = { error -> _messageFlow.emit("提交失败: ${error.message}") }
             )
         }
     }
 
-    fun toggleAutoSpark(enabled: Boolean) {
-        if (!ensureApproved()) return
-        val newConfig = _uiState.value.config.copy(enabled = enabled)
-        updateConfig(newConfig)
-    }
+    fun toggleAutoSpark(enabled: Boolean) = updateConfig(_uiState.value.config.copy(enabled = enabled))
 
-    fun setDefaultMessage(msg: String) {
-        _uiState.update { it.copy(config = it.config.copy(defaultMessage = msg)) }
+    fun setDefaultMessage(message: String) {
+        _uiState.update { it.copy(config = it.config.copy(defaultMessage = message)) }
     }
 
     fun setRunHour(hour: Int) {
         _uiState.update { it.copy(config = it.config.copy(hour = hour.coerceIn(0, 23))) }
     }
 
-    fun addTarget(name: String, message: String?) {
-        if (name.isBlank()) return
-        val currentTargets = _uiState.value.config.targets.toMutableList()
-        currentTargets.add(SparkTarget(name = name.trim(), message = message?.takeIf { it.isNotBlank() }))
-        val newConfig = _uiState.value.config.copy(targets = currentTargets)
-        updateConfig(newConfig)
+    fun addTarget(friend: DouyinFriend) {
+        val current = _uiState.value.config
+        if (current.targets.any { it.identityKey() == friend.identityKey() }) {
+            viewModelScope.launch { _messageFlow.emit("该会话已在续火花列表中") }
+            return
+        }
+        updateConfig(
+            current.copy(
+                targets = current.targets + SparkTarget(
+                    name = friend.name,
+                    mode = "standard",
+                    message = null,
+                    conversationId = friend.conversationId,
+                    conversationShortId = friend.conversationShortId,
+                    conversationType = friend.conversationType
+                )
+            )
+        )
+    }
+
+    fun updateTarget(original: SparkTarget, mode: String, message: String) {
+        val normalizedMode = if (mode == "custom") "custom" else "standard"
+        if (normalizedMode == "custom" && message.isBlank()) {
+            viewModelScope.launch { _messageFlow.emit("自定义模式需要填写发送内容") }
+            return
+        }
+        val replacement = original.copy(
+            mode = normalizedMode,
+            message = message.trim().takeIf { normalizedMode == "custom" && it.isNotBlank() }
+        )
+        val targets = _uiState.value.config.targets.map { if (it.identityKey() == original.identityKey()) replacement else it }
+        updateConfig(_uiState.value.config.copy(targets = targets))
     }
 
     fun removeTarget(target: SparkTarget) {
-        val currentTargets = _uiState.value.config.targets.filterNot { it.name == target.name }
-        val newConfig = _uiState.value.config.copy(targets = currentTargets)
-        updateConfig(newConfig)
+        updateConfig(_uiState.value.config.copy(targets = _uiState.value.config.targets.filterNot { it.identityKey() == target.identityKey() }))
     }
 
     fun updateConfig(config: DouyinConfig = _uiState.value.config) {
-        if (!ensureApproved()) return
         viewModelScope.launch {
             _uiState.update { it.copy(isSavingConfig = true, config = config) }
-            val res = apiClient.updateDouyinConfig(config)
-            _uiState.update { it.copy(isSavingConfig = false) }
-            res.fold(
-                onSuccess = { resp ->
-                    _messageFlow.emit(resp.message ?: "火花配置已保存")
+            apiClient.updateDouyinConfig(config).fold(
+                onSuccess = { response ->
+                    _uiState.update { it.copy(isSavingConfig = false) }
+                    _messageFlow.emit(response.message ?: "火花配置已保存")
                 },
-                onFailure = { err ->
-                    _messageFlow.emit("保存配置失败: ${err.message}")
+                onFailure = { error ->
+                    _uiState.update { it.copy(isSavingConfig = false) }
+                    _messageFlow.emit("保存配置失败: ${error.message}")
+                    loadData(isRefresh = true)
                 }
             )
         }
     }
 
     fun runSparkNow() {
-        if (!ensureApproved()) return
         viewModelScope.launch {
             _uiState.update { it.copy(isRunningSpark = true) }
-            val res = apiClient.runDouyinSpark()
-            _uiState.update { it.copy(isRunningSpark = false) }
-
-            res.fold(
-                onSuccess = { resp ->
-                    _messageFlow.emit(resp.message ?: "已触发火花发送任务")
+            apiClient.runDouyinSpark().fold(
+                onSuccess = { response ->
+                    _uiState.update { it.copy(isRunningSpark = false) }
+                    _messageFlow.emit(response.message ?: "已触发火花发送任务")
+                    loadData(isRefresh = true)
                 },
-                onFailure = { err ->
-                    _messageFlow.emit("执行失败: ${err.message}")
+                onFailure = { error ->
+                    _uiState.update { it.copy(isRunningSpark = false) }
+                    _messageFlow.emit("执行失败: ${error.message}")
                 }
             )
         }

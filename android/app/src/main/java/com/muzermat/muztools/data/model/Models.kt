@@ -7,7 +7,8 @@ import kotlinx.serialization.Serializable
 data class User(
     val username: String,
     @SerialName("display_name") val displayName: String = "",
-    val role: String? = null
+    val role: String? = null,
+    @SerialName("can_manage_invites") val canManageInvites: Boolean = false
 )
 
 @Serializable
@@ -22,7 +23,8 @@ data class AuthResponse(
 data class RegisterRequest(
     val username: String,
     val password: String,
-    @SerialName("display_name") val displayName: String
+    @SerialName("display_name") val displayName: String,
+    @SerialName("invite_code") val inviteCode: String
 )
 
 @Serializable
@@ -31,9 +33,40 @@ data class LoginRequest(
     val password: String
 )
 
+
+@Serializable
+data class TransportPublicKey(
+    val algorithm: String = "RSA-PKCS1-v1_5",
+    @SerialName("key_id") val keyId: String = "",
+    @SerialName("modulus_hex") val modulusHex: String,
+    val exponent: Long,
+    @SerialName("key_size") val keySize: Int
+)
+
+@Serializable
+data class EncryptedCredentialRequest(
+    val encrypted: Map<String, String>,
+    @SerialName("keep_login") val keepLogin: Boolean = false
+)
+
+@Serializable
+data class InviteIssueResponse(
+    val success: Boolean = false,
+    val code: String = "",
+    val remaining: Int = 0,
+    val detail: String? = null
+)
+
 @Serializable
 data class DeviceRegisterRequest(
     @SerialName("device_id") val deviceId: String
+)
+
+@Serializable
+data class FcmTokenRequest(
+    val token: String,
+    @SerialName("device_id") val deviceId: String = "",
+    @SerialName("app_version") val appVersion: String = ""
 )
 
 @Serializable
@@ -54,6 +87,7 @@ data class StudentStatusResponse(
     val status: String = "unbound",
     @SerialName("student_id") val studentId: String? = null,
     @SerialName("display_name") val displayName: String? = null,
+    @SerialName("auto_signin") val autoSignin: Boolean = false,
     val reason: String? = null,
     val detail: String? = null,
     val approvals: FeatureApprovals = FeatureApprovals(),
@@ -120,25 +154,114 @@ data class DouyinSessionRequest(
 )
 
 @Serializable
+data class DouyinSessionState(
+    val connected: Boolean = false,
+    val username: String = "",
+    val enabled: Boolean = false,
+    @SerialName("default_message") val defaultMessage: String = "续火花",
+    val targets: List<SparkTarget> = emptyList(),
+    val hour: Int = 9,
+    @SerialName("last_run") val lastRun: String = "",
+    @SerialName("last_auto_run") val lastAutoRun: String = "",
+    @SerialName("last_auto_attempt") val lastAutoAttempt: String = ""
+)
+
+@Serializable
 data class DouyinSessionResponse(
     val valid: Boolean = false,
     val nickname: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
-    @SerialName("expire_time") val expireTime: String? = null
-)
+    @SerialName("expire_time") val expireTime: String? = null,
+    val douyin: DouyinSessionState? = null,
+    val enabled: Boolean = false,
+    @SerialName("default_message") val defaultMessage: String = "续火花",
+    val targets: List<SparkTarget> = emptyList(),
+    val hour: Int = 9,
+    @SerialName("last_run") val lastRun: String = "",
+    @SerialName("last_auto_run") val lastAutoRun: String = "",
+    @SerialName("last_auto_attempt") val lastAutoAttempt: String = ""
+) {
+    fun resolvedConfig(): DouyinConfig {
+        val nested = douyin
+        return DouyinConfig(
+            enabled = nested?.enabled ?: enabled,
+            defaultMessage = nested?.defaultMessage ?: defaultMessage,
+            targets = nested?.targets ?: targets,
+            hour = nested?.hour ?: hour
+        )
+    }
+}
 
 @Serializable
 data class SparkTarget(
     val name: String,
-    val message: String? = null
+    val mode: String? = null,
+    val message: String? = null,
+    @SerialName("conversation_id") val conversationId: String = "",
+    @SerialName("conversation_short_id") val conversationShortId: String = "",
+    @SerialName("conversation_type") val conversationType: String = ""
+) {
+    fun resolvedMode(): String =
+        mode?.takeIf { it == "standard" || it == "custom" }
+            ?: if (message.isNullOrBlank()) "standard" else "custom"
+
+    fun identityKey(): String = conversationId.takeIf { it.isNotBlank() }?.let { "id:$it" }
+        ?: "${conversationType.ifBlank { "unknown" }}:$name"
+}
+
+@Serializable
+data class DouyinFriend(
+    val name: String,
+    @SerialName("avatar_url") val avatarUrl: String = "",
+    @SerialName("conversation_id") val conversationId: String = "",
+    @SerialName("conversation_short_id") val conversationShortId: String = "",
+    @SerialName("conversation_type") val conversationType: String = ""
+) {
+    fun identityKey(): String = conversationId.takeIf { it.isNotBlank() }?.let { "id:$it" }
+        ?: "${conversationType.ifBlank { "unknown" }}:$name"
+}
+
+@Serializable
+data class DouyinFriendsResponse(
+    val count: Int = 0,
+    val total: Int = 0,
+    val friends: List<DouyinFriend> = emptyList(),
+    val cached: Boolean = true,
+    @SerialName("cached_at") val cachedAt: String = ""
 )
 
 @Serializable
 data class DouyinConfig(
     val enabled: Boolean = false,
-    @SerialName("default_message") val defaultMessage: String = "滴滴",
+    @SerialName("default_message") val defaultMessage: String = "续火花",
     val targets: List<SparkTarget> = emptyList(),
-    val hour: Int = 8
+    val hour: Int = 9
+)
+
+@Serializable
+data class TiboPostItem(
+    val id: String,
+    @SerialName("created_at") val createdAt: String = "",
+    val text: String = "",
+    val url: String = ""
+)
+
+@Serializable
+data class TiboHistoryResponse(
+    val items: List<TiboPostItem> = emptyList(),
+    val count: Int = 0,
+    @SerialName("last_checked") val lastChecked: String = "",
+    val enabled: Boolean = false
+)
+
+@Serializable
+data class TiboConfigRequest(val enabled: Boolean)
+
+@Serializable
+data class TiboConfigResponse(
+    val success: Boolean = false,
+    val enabled: Boolean = false,
+    val message: String = ""
 )
 
 @Serializable
@@ -148,7 +271,8 @@ data class NotificationItem(
     val content: String,
     val timestamp: Long = 0L,
     @SerialName("created_at") val createdAt: String? = null,
-    val read: Boolean = false
+    val read: Boolean = false,
+    val url: String = ""
 )
 
 @Serializable

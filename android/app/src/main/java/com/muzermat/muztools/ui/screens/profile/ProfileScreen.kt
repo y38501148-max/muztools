@@ -1,6 +1,7 @@
 package com.muzermat.muztools.ui.screens.profile
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -160,7 +162,7 @@ fun ProfileScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("审批状态", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("认证状态", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(uiState.studentStatus.status, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
                         }
                         uiState.studentStatus.reason?.let { reason ->
@@ -169,7 +171,7 @@ fun ProfileScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("审批备注", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                                Text("认证说明", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                                 Text(reason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                             }
                         }
@@ -274,10 +276,17 @@ fun ProfileScreen(
 
 @Composable
 private fun NotificationCard(item: com.muzermat.muztools.data.model.NotificationItem) {
+    val uriHandler = LocalUriHandler.current
+    val clickableModifier = if (item.url.startsWith("http://") || item.url.startsWith("https://")) {
+        Modifier.clickable { uriHandler.openUri(item.url) }
+    } else {
+        Modifier
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .then(clickableModifier),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -290,6 +299,15 @@ private fun NotificationCard(item: com.muzermat.muztools.data.model.Notification
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (item.url.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "点击查看",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }

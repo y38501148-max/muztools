@@ -96,11 +96,6 @@ class TdViewModel(
             viewModelScope.launch { _messageFlow.emit("请先绑定统一认证学号") }
             return
         }
-        val approved = state.studentStatus == "approved" || state.studentStatus == "已通过"
-        if (!approved) {
-            viewModelScope.launch { _messageFlow.emit("学生认证尚未通过审批，无法使用手动 TD") }
-            return
-        }
         val entranceUri = state.entrancePhotoUri
         val exitUri = state.exitPhotoUri
         if (entranceUri == null || exitUri == null) {

@@ -4,17 +4,34 @@ from pathlib import Path
 from typing import Any
 
 import asyncio
+import threading
+import time
 
-from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import Body, Cookie, Depends, FastAPI, File, Header, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from . import appver, sunshine, td
-from .config import ensure_dirs
-from .douyin import normalize_cookies, run_spark
-from .douyin_qr import cancel_session, get_session, public_qr, start_qr_login
-from .notify import list_notifications, mark_read
+from . import appver, config, sunshine, td
+from .fcm import register_token as register_fcm_token, unregister_token as unregister_fcm_token
+from .config import CORS_ORIGINS, ensure_dirs
+from .douyin import (
+    normalize_cookies,
+    normalize_target,
+    run_spark,
+    list_douyin_friends,
+    validate_douyin_cookies,
+)
+from .invites import consume_invite, invite_stats, issue_invite, release_invite
+from .security import decrypt_transport_payload, public_transport_key, validate_password, validate_username
+from .notify import (
+    configure_live_notifications,
+    list_notifications,
+    mark_read,
+    subscribe_live_notifications,
+    unsubscribe_live_notifications,
+)
 from .scheduler import start_scheduler
+from .tibo import list_tibo_history
 from .signin_core import perform_duaa_login, safe_fetch_schedule
 from .store import (
     FEATURE_KEYS,
@@ -23,28 +40,81 @@ from .store import (
     create_user,
     delete_session,
     ensure_approvals,
+    find_user_by_username,
+    get_student_password,
+    now_iso,
     photo_dir,
     public_user,
     save_user,
-    set_feature_approval,
+    set_student_password,
+    student_runtime,
     user_from_token,
 )
 
 app = FastAPI(title="muztools", version="0.1.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-MuzTool-Bridge-Token"],
+    )
 
 
-def current_user(authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    token = ""
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if request.url.path in {"/api/auth/login", "/api/auth/register", "/api/student/bind"} and content_length:
+        try:
+            if int(content_length) > 64 * 1024:
+                return Response("请求体过大", status_code=413, media_type="text/plain")
+        except ValueError:
+            return Response("请求体无效", status_code=400, media_type="text/plain")
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    return response
+
+
+SESSION_COOKIE = "muz_session"
+SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
+
+
+def _set_session_cookie(response: Response, token: str, keep_login: bool) -> None:
+    if keep_login:
+        response.set_cookie(
+            SESSION_COOKIE,
+            token,
+            max_age=SESSION_COOKIE_MAX_AGE,
+            httponly=True,
+            samesite="lax",
+            secure=False,
+            path="/",
+        )
+    else:
+        response.delete_cookie(SESSION_COOKIE, path="/")
+
+
+def current_user(
+    authorization: str | None = Header(default=None),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    bearer_token = ""
     if authorization and authorization.lower().startswith("bearer "):
-        token = authorization.split(" ", 1)[1].strip()
-    user = user_from_token(token)
+        bearer_token = authorization.split(" ", 1)[1].strip()
+    cookie_token = str(session_cookie or "").strip()
+
+    token = bearer_token
+    user = user_from_token(token) if token else None
+    # A browser can retain an old local token while its newer persistent
+    # HttpOnly cookie is still valid. Fall back to that cookie instead of
+    # forcing a needless login.
+    if not user and cookie_token and cookie_token != bearer_token:
+        token = cookie_token
+        user = user_from_token(token)
     if not user:
         raise HTTPException(status_code=401, detail="未登录或登录已失效")
     user["_token"] = token
@@ -61,12 +131,11 @@ def require_student(user: dict[str, Any], approved: bool = False) -> dict[str, A
 
 
 def require_feature(user: dict[str, Any], feature: str) -> dict[str, Any]:
-    student = require_student(user)
-    ensure_approvals(user)
-    if user.get("approvals", {}).get(feature) != "approved":
-        names = {"signin": "自动签到", "td": "TD", "spark": "抖音续火花"}
-        raise HTTPException(status_code=403, detail=f"{names.get(feature, feature)}尚未通过审批")
-    return student
+    if feature not in FEATURE_KEYS:
+        raise HTTPException(status_code=400, detail="未知功能")
+    if feature in {"signin", "td"}:
+        return require_student(user)
+    return user.get("student") or {}
 
 
 
@@ -78,6 +147,7 @@ def student_payload(user: dict[str, Any]) -> dict[str, Any]:
         "status": student.get("status") or "unbound",
         "student_id": student.get("student_id"),
         "display_name": student.get("real_name") or user.get("display_name"),
+        "auto_signin": bool(student.get("auto_signin")),
         "student": student,
         "approvals": approvals,
         "signin_status": approvals.get("signin", "none"),
@@ -121,19 +191,24 @@ async def load_schedule(user: dict[str, Any], use_cache: bool) -> dict[str, Any]
     from .signin_core import TZ_BEIJING
 
     student = user.get("student") or {}
+    runtime = student_runtime(student)
     today = datetime.now(TZ_BEIJING).strftime("%Y%m%d")
     empty = format_schedule([], bool(student.get("auto_signin")), ensure_approvals(user)["approvals"].get("signin") == "approved", today, True)
     if not student.get("student_id"):
         return empty
     cached_rows = student.get("today_schedule") or []
-    if use_cache and student.get("schedule_date") == today and cached_rows:
-        return format_schedule(cached_rows, bool(student.get("auto_signin")), ensure_approvals(user)["approvals"].get("signin") == "approved", today, True)
+    if use_cache:
+        rows = cached_rows if student.get("schedule_date") == today else []
+        return format_schedule(rows, bool(student.get("auto_signin")), ensure_approvals(user)["approvals"].get("signin") == "approved", today, True)
     try:
-        sched, _auth = await safe_fetch_schedule(student, today)
+        sched, _auth = await safe_fetch_schedule(runtime, today)
     except Exception:
         if cached_rows:
             return format_schedule(cached_rows, bool(student.get("auto_signin")), ensure_approvals(user)["approvals"].get("signin") == "approved", today, True)
         raise
+    for key in ("uid", "session_id", "cookies"):
+        if key in runtime:
+            student[key] = runtime[key]
     old = {item.get("id"): item.get("auto_sign_trigger_hm") for item in cached_rows}
     for course in sched:
         course["auto_sign_trigger_hm"] = old.get(course.get("id"), course.get("auto_sign_trigger_hm"))
@@ -145,7 +220,7 @@ async def load_schedule(user: dict[str, Any], use_cache: bool) -> dict[str, Any]
 
 async def load_td(user: dict[str, Any]) -> dict[str, Any]:
     student = require_feature(user, "td")
-    rows = await td.query_td_counts(student["student_id"], student["password"])
+    rows = await td.query_td_counts(student["student_id"], get_student_password(student))
     latest = td.latest_count(rows)
     photos = photo_dir(user["id"])
     campus = user.get("td", {}).get("campus", "xueyuanlu")
@@ -165,7 +240,7 @@ async def load_td(user: dict[str, Any]) -> dict[str, Any]:
 
 async def load_sunshine(user: dict[str, Any]) -> dict[str, Any]:
     student = require_feature(user, "td")
-    data = await sunshine.query_sunshine(student["student_id"], student["password"])
+    data = await sunshine.query_sunshine(student["student_id"], get_student_password(student))
     data["count"] = data.get("term_count", 0)
     data["target_count"] = data.get("term_target", 16)
     return data
@@ -181,10 +256,37 @@ def persist_qr_cookies(user: dict[str, Any], session) -> None:
     save_user(user)
     session.persisted = True
 
+_AUTH_RATE_LOCK = threading.Lock()
+_AUTH_RATE: dict[str, list[float]] = {}
+
+
+def _rate_limit(request: Request, scope: str, identity: str, limit: int, window_seconds: int) -> None:
+    host = request.client.host if request.client else "unknown"
+    key = f"{scope}:{host}:{identity.casefold()}"
+    now = time.monotonic()
+    with _AUTH_RATE_LOCK:
+        attempts = [stamp for stamp in _AUTH_RATE.get(key, []) if now - stamp < window_seconds]
+        if len(attempts) >= limit:
+            raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+        attempts.append(now)
+        _AUTH_RATE[key] = attempts
+        if len(_AUTH_RATE) > 10000:
+            stale_before = now - 3600
+            for stale_key in list(_AUTH_RATE):
+                if not _AUTH_RATE[stale_key] or _AUTH_RATE[stale_key][-1] < stale_before:
+                    _AUTH_RATE.pop(stale_key, None)
+
+
+def _require_invite_admin(user: dict[str, Any]) -> None:
+    if str(user.get("username") or "").casefold() != "muzermat":
+        raise HTTPException(status_code=404, detail="功能不存在")
+
+
 @app.on_event("startup")
 async def on_startup() -> None:
     ensure_dirs()
     appver.load_version()
+    configure_live_notifications(asyncio.get_running_loop())
     start_scheduler()
 
 
@@ -209,34 +311,79 @@ async def app_apk():
 
 
 
+@app.get("/api/security/public-key")
+async def security_public_key() -> dict[str, Any]:
+    return public_transport_key()
+
+
 @app.post("/api/auth/register")
-async def register(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    username = str(payload.get("username") or "").strip()
-    password = str(payload.get("password") or "")
-    display_name = str(payload.get("display_name") or username).strip()
-    if not username or not password:
-        raise HTTPException(status_code=400, detail="用户名和密码不能为空")
+async def register(request: Request, response: Response, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     try:
-        user = create_user(username, password, display_name)
+        fields = decrypt_transport_payload(payload, ("username", "password", "display_name", "invite_code"))
+        username = validate_username(fields["username"])
+        password = validate_password(fields["password"])
+        display_name = fields["display_name"].strip() or username
+        if len(display_name) > 40:
+            raise ValueError("显示名过长")
+        invite_code = fields["invite_code"].strip()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _rate_limit(request, "register-ip", "*", 20, 3600)
+    _rate_limit(request, "register", username, 8, 3600)
+    if find_user_by_username(username):
+        raise HTTPException(status_code=400, detail="账号无法注册，请检查信息后重试")
+    invite_id = ""
+    try:
+        invite_id = consume_invite(invite_code, username)
+        try:
+            user = create_user(username, password, display_name)
+        except Exception:
+            release_invite(invite_id, username)
+            raise
+    except ValueError as exc:
+        message = str(exc)
+        if "邀请码" not in message:
+            message = "账号无法注册，请检查信息后重试"
+        raise HTTPException(status_code=400, detail=message) from exc
+    user["registration_invite_id"] = invite_id
+    save_user(user)
     token = create_session(user["id"])
+    _set_session_cookie(response, token, bool(payload.get("keep_login", True)))
     return {"token": token, "user": public_user(user)}
 
 
 @app.post("/api/auth/login")
-async def login(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+async def login(request: Request, response: Response, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     try:
-        user = authenticate(str(payload.get("username") or ""), str(payload.get("password") or ""))
+        fields = decrypt_transport_payload(payload, ("username", "password"))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    username = fields["username"].strip()
+    _rate_limit(request, "login-ip", "*", 120, 600)
+    _rate_limit(request, "login", username or "unknown", 30, 600)
+    try:
+        user = authenticate(username, fields["password"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="用户名或密码错误") from exc
     token = create_session(user["id"])
+    _set_session_cookie(response, token, bool(payload.get("keep_login", False)))
+    return {"token": token, "user": public_user(user)}
+
+
+@app.get("/api/auth/session")
+async def auth_session(response: Response, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    token = str(user.get("_token") or "")
+    # Refresh the persistent cookie from either an existing cookie or a valid
+    # local Bearer token. This repairs browser sessions whose cookie was lost
+    # while localStorage still retained the persistent token.
+    _set_session_cookie(response, token, True)
     return {"token": token, "user": public_user(user)}
 
 
 @app.post("/api/auth/logout")
-async def logout(user: dict[str, Any] = Depends(current_user)) -> dict[str, str]:
+async def logout(response: Response, user: dict[str, Any] = Depends(current_user)) -> dict[str, str]:
     delete_session(user.get("_token", ""))
+    response.delete_cookie(SESSION_COOKIE, path="/")
     return {"status": "ok"}
 
 
@@ -255,6 +402,27 @@ async def register_device(payload: dict[str, Any] = Body(...), user: dict[str, A
     return {"status": "ok"}
 
 
+@app.post("/api/devices/fcm")
+async def register_fcm_device(payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    token = str(payload.get("token") or "").strip()
+    try:
+        register_fcm_token(
+            user,
+            token,
+            device_id=str(payload.get("device_id") or "").strip()[:128],
+            app_version=str(payload.get("app_version") or "").strip()[:32],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok", "provider": "fcm", "configured": bool(config.FCM_CREDENTIALS_FILE)}
+
+
+@app.delete("/api/devices/fcm")
+async def unregister_fcm_device(payload: dict[str, Any] = Body(default={}), user: dict[str, Any] = Depends(current_user)) -> dict[str, str]:
+    unregister_fcm_token(user, str(payload.get("token") or ""))
+    return {"status": "ok"}
+
+
 @app.get("/api/notifications")
 async def notifications(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
     items = []
@@ -269,6 +437,51 @@ async def notifications(user: dict[str, Any] = Depends(current_user)) -> list[di
     return items
 
 
+@app.websocket("/api/notifications/ws")
+async def notifications_websocket(websocket: WebSocket, token: str = Query(default="")) -> None:
+    user = user_from_token(str(token or "").strip())
+    if not user:
+        await websocket.close(code=4401)
+        return
+    user_id = str(user.get("id") or "")
+    queue = subscribe_live_notifications(user_id)
+    await websocket.accept()
+    try:
+        await websocket.send_json({"type": "ready"})
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=25)
+                await websocket.send_json({"type": "notification", "item": {**item, "content": item.get("body") or ""}})
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "ping"})
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        unsubscribe_live_notifications(user_id, queue)
+
+
+@app.get("/api/tibo/history")
+async def tibo_history(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    payload = list_tibo_history()
+    payload["enabled"] = bool(user.get("tibo", {}).get("enabled", False))
+    return payload
+
+
+@app.put("/api/tibo/config")
+async def update_tibo_config(
+    payload: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    enabled = bool(payload.get("enabled"))
+    user.setdefault("tibo", {})["enabled"] = enabled
+    save_user(user)
+    return {
+        "success": True,
+        "enabled": enabled,
+        "message": "Tibo 推送已开启" if enabled else "Tibo 推送已关闭",
+    }
+
+
 @app.post("/api/notifications/read")
 async def read_notifications(payload: dict[str, Any] = Body(default={}), user: dict[str, Any] = Depends(current_user)) -> dict[str, str]:
     mark_read(user["id"], payload.get("id"))
@@ -277,8 +490,12 @@ async def read_notifications(payload: dict[str, Any] = Body(default={}), user: d
 
 @app.post("/api/student/bind")
 async def bind_student(payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    student_id = str(payload.get("student_id") or "").strip()
-    password = str(payload.get("password") or "")
+    try:
+        fields = decrypt_transport_payload(payload, ("student_id", "password"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    student_id = fields["student_id"].strip()
+    password = fields["password"]
     if not student_id or not password:
         raise HTTPException(status_code=400, detail="学号和密码不能为空")
     try:
@@ -288,7 +505,6 @@ async def bind_student(payload: dict[str, Any] = Body(...), user: dict[str, Any]
     user["student"].update(
         {
             "student_id": student_id,
-            "password": password,
             "real_name": real_name,
             "uid": uid,
             "session_id": sess,
@@ -296,9 +512,9 @@ async def bind_student(payload: dict[str, Any] = Body(...), user: dict[str, Any]
             "status": "verified",
         }
     )
-    ensure_approvals(user)
+    set_student_password(user["student"], password)
     save_user(user)
-    return {"success": True, "message": "学生认证成功，请分别申请自动签到 / TD / 续火花", "user": public_user(user)}
+    return {"success": True, "message": "学生认证成功，相关校园功能已可使用", "user": public_user(user)}
 
 
 @app.get("/api/student")
@@ -313,39 +529,63 @@ async def home_summary(cached: int = Query(default=1), user: dict[str, Any] = De
     try:
         schedule = await load_schedule(user, use_cache=bool(cached))
     except Exception as exc:
-        schedule = {"schedule": [], "enabled": False, "message": str(exc), "cached": True}
-    td_payload = None
-    sunshine_payload = None
-    if approvals.get("td") == "approved" and (user.get("student") or {}).get("student_id"):
-        try:
-            td_payload = await load_td(user)
-        except Exception as exc:
-            td_payload = {"semester_count": 0, "target_count": 32, "status": "error", "message": str(exc)}
-        try:
-            sunshine_payload = await load_sunshine(user)
-        except Exception as exc:
-            sunshine_payload = {"count": 0, "target_count": 16, "message": str(exc)}
+        schedule = {
+            "schedule": [],
+            "enabled": bool((user.get("student") or {}).get("auto_signin")),
+            "message": str(exc),
+            "cached": True,
+        }
+
+    home_cache = user.setdefault("home_cache", {})
+    td_payload = home_cache.get("td")
+    sunshine_payload = home_cache.get("sunshine")
+    can_query_td = bool((user.get("student") or {}).get("student_id"))
+    if not cached and can_query_td:
+        td_result, sunshine_result = await asyncio.gather(load_td(user), load_sunshine(user), return_exceptions=True)
+        if isinstance(td_result, Exception):
+            td_payload = {"semester_count": 0, "target_count": 32, "status": "error", "message": str(td_result)}
+        else:
+            td_payload = td_result
+            home_cache["td"] = td_result
+        if isinstance(sunshine_result, Exception):
+            sunshine_payload = {"count": 0, "target_count": 16, "message": str(sunshine_result)}
+        else:
+            sunshine_payload = sunshine_result
+            home_cache["sunshine"] = sunshine_result
+        home_cache["updated_at"] = now_iso()
+        save_user(user)
+
     return {
         "user": public_user(user),
         "student": student_payload(user),
         "schedule": schedule,
         "td": td_payload,
         "sunshine": sunshine_payload,
+        "cached": bool(cached),
     }
 
 
 @app.post("/api/student/request")
 async def request_feature(payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    require_student(user)
-    feature = str(payload.get("feature") or "").strip()
-    if feature not in FEATURE_KEYS:
-        raise HTTPException(status_code=400, detail="功能须为 signin / td / spark")
-    current = ensure_approvals(user)["approvals"].get(feature)
-    if current == "approved":
-        return {"success": True, "message": "该功能已通过审批", "user": public_user(user)}
-    set_feature_approval(user, feature, "pending")
-    save_user(user)
-    return {"success": True, "message": "已提交审批申请", "user": public_user(user)}
+    _ = payload
+    ensure_approvals(user)
+    return {"success": True, "message": "审批模式已取消，功能默认开放", "user": public_user(user)}
+
+
+@app.get("/api/invites/stats")
+async def get_invite_stats(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _require_invite_admin(user)
+    return invite_stats()
+
+
+@app.post("/api/invites/issue")
+async def get_unused_invite(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _require_invite_admin(user)
+    try:
+        result = issue_invite(str(user.get("username") or "muzermat"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, **result}
 
 
 @app.get("/api/signin/schedule")
@@ -369,7 +609,11 @@ async def toggle_auto(payload: dict[str, Any] = Body(...), user: dict[str, Any] 
 @app.get("/api/td/status")
 async def td_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     try:
-        return await load_td(user)
+        result = await load_td(user)
+        user.setdefault("home_cache", {})["td"] = result
+        user["home_cache"]["updated_at"] = now_iso()
+        save_user(user)
+        return result
     except HTTPException:
         raise
     except Exception as exc:
@@ -405,7 +649,11 @@ async def td_manual(payload: dict[str, Any] = Body(default={}), user: dict[str, 
 @app.get("/api/sunshine/status")
 async def sunshine_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     try:
-        return await load_sunshine(user)
+        result = await load_sunshine(user)
+        user.setdefault("home_cache", {})["sunshine"] = result
+        user["home_cache"]["updated_at"] = now_iso()
+        save_user(user)
+        return result
     except HTTPException:
         raise
     except Exception as exc:
@@ -415,30 +663,26 @@ async def sunshine_status(user: dict[str, Any] = Depends(current_user)) -> dict[
 @app.post("/api/douyin/qr/start")
 async def douyin_qr_start(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     require_feature(user, "spark")
-    try:
-        session = await asyncio.to_thread(start_qr_login, user["id"])
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    persist_qr_cookies(user, session)
-    return public_qr(session)
+    raise HTTPException(
+        status_code=410,
+        detail="抖音扫码登录已停用，请使用 Cookie 导入完成账号绑定",
+    )
 
 
 @app.get("/api/douyin/qr/status")
 async def douyin_qr_status(login_id: str = Query(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _ = login_id
     require_feature(user, "spark")
-    session = get_session(login_id)
-    if not session or session.user_id != user["id"]:
-        raise HTTPException(status_code=404, detail="登录会话不存在或已过期")
-    persist_qr_cookies(user, session)
-    return public_qr(session)
+    raise HTTPException(
+        status_code=410,
+        detail="抖音扫码登录已停用，请使用 Cookie 导入完成账号绑定",
+    )
 
 
 @app.post("/api/douyin/qr/cancel")
 async def douyin_qr_cancel(payload: dict[str, Any] = Body(default={}), user: dict[str, Any] = Depends(current_user)) -> dict[str, str]:
+    _ = payload
     require_feature(user, "spark")
-    login_id = str(payload.get("login_id") or "")
-    if login_id:
-        cancel_session(login_id, user["id"])
     return {"status": "ok"}
 
 
@@ -447,12 +691,27 @@ async def douyin_session(payload: dict[str, Any] = Body(...), user: dict[str, An
     require_feature(user, "spark")
     try:
         cookies = normalize_cookies(payload.get("cookies"))
+        cookies, detected_name = await asyncio.to_thread(validate_douyin_cookies, cookies)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    user.setdefault("douyin", {})
     user["douyin"]["cookies"] = cookies
-    user["douyin"]["username"] = str(payload.get("username") or user["douyin"].get("username") or "")
+    user["douyin"].pop("friends_cache", None)
+    user["douyin"].pop("friends_cached_at", None)
+    user["douyin"]["username"] = str(
+        payload.get("username")
+        or detected_name
+        or user["douyin"].get("username")
+        or user.get("display_name")
+        or "抖音用户"
+    )
     save_user(user)
-    return {"valid": True, "nickname": user["douyin"].get("username") or user.get("display_name"), "user": public_user(user)}
+    return {
+        "valid": True,
+        "nickname": user["douyin"]["username"],
+        "message": "抖音 Cookie 校验成功并已保存",
+        "user": public_user(user),
+    }
 
 
 @app.get("/api/douyin/session")
@@ -470,6 +729,103 @@ async def get_douyin_session(user: dict[str, Any] = Depends(current_user)) -> di
     }
 
 
+def _normalize_friend_cache(raw: Any) -> list[dict[str, str]]:
+    if not isinstance(raw, list):
+        return []
+    friends: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        conversation_id = str(item.get("conversation_id") or "").strip()
+        raw_type = str(item.get("conversation_type") or "").strip().lower()
+        conversation_type = raw_type if raw_type in {"direct", "group"} else ""
+        if not name:
+            continue
+        key = f"id:{conversation_id}" if conversation_id else f"{conversation_type or 'unknown'}:{name}"
+        if key in seen:
+            continue
+        seen.add(key)
+        friends.append(
+            {
+                "name": name,
+                "avatar_url": str(item.get("avatar_url") or ""),
+                "conversation_id": conversation_id,
+                "conversation_short_id": str(item.get("conversation_short_id") or "").strip(),
+                "conversation_type": conversation_type,
+            }
+        )
+    return friends
+
+
+def _enrich_spark_targets(cfg: dict[str, Any], friends: list[dict[str, str]]) -> bool:
+    changed = False
+    by_name: dict[str, list[dict[str, str]]] = {}
+    for friend in friends:
+        by_name.setdefault(friend["name"], []).append(friend)
+    enriched: list[dict[str, str]] = []
+    for raw in cfg.get("targets") or []:
+        if not isinstance(raw, dict):
+            continue
+        target = normalize_target(raw)
+        matches = by_name.get(target["name"], [])
+        if not target["conversation_id"] and len(matches) == 1 and matches[0].get("conversation_id"):
+            friend = matches[0]
+            target["conversation_id"] = friend["conversation_id"]
+            target["conversation_short_id"] = friend.get("conversation_short_id", "")
+            target["conversation_type"] = friend.get("conversation_type", "")
+            changed = True
+        enriched.append(target)
+    if enriched != (cfg.get("targets") or []):
+        cfg["targets"] = enriched
+        changed = True
+    return changed
+
+
+@app.get("/api/douyin/friends")
+async def douyin_friends(
+    query: str = Query("", max_length=64),
+    refresh: bool = Query(False),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    require_feature(user, "spark")
+    cfg = user.setdefault("douyin", {})
+    cookies = cfg.get("cookies") or []
+    if not cookies:
+        raise HTTPException(status_code=400, detail="请先导入有效的抖音 Cookie")
+
+    cache_exists = "friends_cache" in cfg
+    refreshed = bool(refresh or not cache_exists)
+    if refreshed:
+        try:
+            friends = await asyncio.to_thread(list_douyin_friends, cookies)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        friends = _normalize_friend_cache(friends)
+        cfg["friends_cache"] = friends
+        cfg["friends_cached_at"] = now_iso()
+        _enrich_spark_targets(cfg, friends)
+        save_user(user)
+    else:
+        friends = _normalize_friend_cache(cfg.get("friends_cache"))
+        if _enrich_spark_targets(cfg, friends):
+            save_user(user)
+
+    total = len(friends)
+    needle = query.strip().casefold()
+    if needle:
+        friends = [friend for friend in friends if needle in friend["name"].casefold()]
+    return {
+        "query": query.strip(),
+        "count": len(friends),
+        "total": total,
+        "friends": friends,
+        "cached": not refreshed,
+        "cached_at": str(cfg.get("friends_cached_at") or ""),
+    }
+
+
 @app.put("/api/douyin/config")
 async def douyin_config(payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     require_feature(user, "spark")
@@ -483,9 +839,11 @@ async def douyin_config(payload: dict[str, Any] = Body(...), user: dict[str, Any
     if "targets" in payload:
         targets = []
         for item in payload.get("targets") or []:
-            name = str(item.get("name") or "").strip()
-            if name:
-                targets.append({"name": name, "message": str(item.get("message") or "")})
+            if not isinstance(item, dict):
+                continue
+            target = normalize_target(item)
+            if target["name"]:
+                targets.append(target)
         cfg["targets"] = targets
     save_user(user)
     return {"success": True, "message": "火花配置已保存", "user": public_user(user)}
@@ -495,7 +853,7 @@ async def douyin_config(payload: dict[str, Any] = Body(...), user: dict[str, Any
 async def douyin_run(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     require_feature(user, "spark")
     try:
-        result = run_spark(user)
+        result = await asyncio.to_thread(run_spark, user)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     save_user(user)
@@ -506,6 +864,28 @@ async def douyin_run(user: dict[str, Any] = Depends(current_user)) -> dict[str, 
 
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
+
+
+@app.get("/downloads/td-web-bridge.py")
+async def td_web_bridge_download():
+    path = WEB_DIR / "td_web_bridge.py"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="电脑端 TD 桥接脚本不存在")
+    return FileResponse(path, filename="muztool-td-web-bridge.py", media_type="text/x-python")
+
+
+@app.get("/downloads/td-tampermonkey.user.js")
+async def td_tampermonkey_download():
+    path = WEB_DIR / "td_tampermonkey.user.js"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="篡改猴辅助脚本不存在")
+    return FileResponse(
+        path,
+        filename="muztool-td-tampermonkey.user.js",
+        media_type="text/javascript",
+        content_disposition_type="inline",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/")

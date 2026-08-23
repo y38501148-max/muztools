@@ -2,7 +2,6 @@ package com.muzermat.muztools.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -30,17 +29,23 @@ fun StatusBadge(
     modifier: Modifier = Modifier
 ) {
     val (bgColor, textColor, text, icon) = when (status.lowercase()) {
-        "approved", "通过", "已通过", "signed", "已签到" -> {
-            Tuple4(SuccessColor.copy(alpha = 0.12f), SuccessColor, if (status == "signed" || status == "已签到") "已签到" else "已通过", Icons.Default.CheckCircle)
+        "approved", "available", "verified", "通过", "已通过", "已认证" -> {
+            Tuple4(SuccessColor.copy(alpha = 0.12f), SuccessColor, if (status.lowercase() == "verified" || status == "已认证") "已认证" else "可用", Icons.Default.CheckCircle)
         }
-        "pending", "待审批", "待签到" -> {
-            Tuple4(WarningColor.copy(alpha = 0.15f), Color(0xFFC07000), if (status == "pending" || status == "待审批") "待审批" else "待签到", Icons.Default.HourglassEmpty)
+        "signed", "已签到" -> {
+            Tuple4(SuccessColor.copy(alpha = 0.12f), SuccessColor, "已签到", Icons.Default.CheckCircle)
         }
-        "rejected", "已拒绝", "未签到", "missed" -> {
-            Tuple4(ErrorColor.copy(alpha = 0.12f), ErrorColor, if (status == "rejected" || status == "已拒绝") "已拒绝" else "未签到", Icons.Default.Error)
+        "pending", "待处理", "待签到" -> {
+            Tuple4(WarningColor.copy(alpha = 0.15f), Color(0xFFC07000), if (status == "待签到") "待签到" else "待处理", Icons.Default.HourglassEmpty)
+        }
+        "rejected", "failed", "认证失败", "未签到", "missed" -> {
+            Tuple4(ErrorColor.copy(alpha = 0.12f), ErrorColor, if (status == "未签到" || status.lowercase() == "missed") "未签到" else "认证失败", Icons.Default.Error)
+        }
+        "unbound", "未绑定" -> {
+            Tuple4(InfoColor.copy(alpha = 0.12f), InfoColor, "未绑定", Icons.Default.Info)
         }
         else -> {
-            Tuple4(InfoColor.copy(alpha = 0.12f), InfoColor, "未申请", Icons.Default.Info)
+            Tuple4(InfoColor.copy(alpha = 0.12f), InfoColor, "未配置", Icons.Default.Info)
         }
     }
 
@@ -102,50 +107,6 @@ fun SectionHeader(
             )
         }
         action?.invoke()
-    }
-}
-
-@Composable
-fun PendingApprovalBanner(
-    modifier: Modifier = Modifier,
-    message: String = "学生认证待审批中，审批通过后方可开启自动功能"
-) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.HourglassEmpty,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-        }
     }
 }
 

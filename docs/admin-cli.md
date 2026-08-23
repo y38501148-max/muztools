@@ -1,16 +1,24 @@
-# 审批指令
+# muz-admin 管理命令
 
-学生在 App 内用统一认证学号/密码绑定后进入 `pending`。管理员在 Server2：
+v1.3.1 已取消功能审批。新账号通过邀请码注册，既有账号保持不变并默认拥有全部功能权限。
 
 ```bash
-muz-admin pending
-muz-admin approve 25371537
-muz-admin reject alice
-muz-admin revoke bob
-muz-admin disable-signin alice
-muz-admin enable-signin alice
-muz-admin list
-muz-admin show alice
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin list
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin show <user>
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin generate-invites --count 50
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin invite-stats
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin revoke <user>
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin disable-signin <user>
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin enable-signin <user>
 ```
 
-`approve` 之前，客户端不能打开自动签到。
+发布客户端版本：
+
+```bash
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin set-version 1.3.1 \
+  --code 18 --title 'MuzTool v1.3.1' \
+  --message 'FCM 后台推送、邀请码注册与凭据加密' \
+  --apk /tmp/muztools-1.3.1.apk
+```
+
+不要在命令输出或日志中打印密码、Cookie、Token 或邀请码正文。

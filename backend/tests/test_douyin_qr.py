@@ -45,7 +45,8 @@ def test_public_qr_payload():
     assert payload["qr_image"] == base64.b64encode(PNG).decode("ascii")
 
 
-from muztool.douyin_qr import _logged_in, _handle_check_payload
+from muztool.douyin_qr import _logged_in, _handle_check_payload, _is_login_redirect, _merge_cookies
+from muztool.douyin import normalize_cookies
 
 
 def test_logged_in_cookie_names():
@@ -62,3 +63,88 @@ def test_handle_check_confirms_redirect(tmp_path):
     assert state["confirmed"] is True
     assert state["redirect"].startswith("https://")
     assert "scanned" in events.read_text(encoding="utf-8")
+
+
+def test_handle_check_requires_mfa_without_confirming_static_asset(tmp_path):
+    events = tmp_path / "events.jsonl"
+    events.write_text("", encoding="utf-8")
+    state = {
+        "redirect": "",
+        "done": False,
+        "confirmed": False,
+        "verification_required": False,
+    }
+    _handle_check_payload(
+        {
+            "status": "2046",
+            "url": (
+                "https://auth.zijieapi.com/ucenter_web/app/second_verification_web/"
+                "dist/index.umd.production.js?error_code=2046&std_verify_type=MFA"
+            ),
+            "verify_ways": ["mobile_sms_verify", "pwd_verify"],
+        },
+        state,
+        events,
+    )
+    assert state["confirmed"] is False
+    assert state["redirect"] == ""
+    assert state["verification_required"] is True
+    text = events.read_text(encoding="utf-8")
+    assert '"status": "scanned"' in text
+    assert "后端网页登录" in text
+
+
+def test_static_or_verification_url_is_not_login_redirect():
+    assert not _is_login_redirect(
+        "https://auth.zijieapi.com/ucenter_web/app/second_verification_web/dist/index.js"
+    )
+    assert not _is_login_redirect("https://www.douyin.com/static/login.js")
+    assert not _is_login_redirect("https://example.com/passport/sso/login/callback")
+    assert _is_login_redirect("https://www.douyin.com/passport/sso/login/callback/?x=1")
+
+
+def test_arbitrary_http_url_does_not_confirm_login(tmp_path):
+    events = tmp_path / "events.jsonl"
+    events.write_text("", encoding="utf-8")
+    state = {"redirect": "", "done": False, "confirmed": False}
+    _handle_check_payload(
+        {"status": "2046", "url": "https://auth.zijieapi.com/static/index.js"},
+        state,
+        events,
+    )
+    assert state["confirmed"] is False
+    assert state["redirect"] == ""
+
+
+def test_apply_event_preserves_scanned_guidance():
+    session = QrSession(login_id="a", user_id="b")
+    _apply_event(
+        session,
+        {"event": "status", "status": "scanned", "error": "请在抖音 App 中完成二次验证"},
+    )
+    assert session.status == "scanned"
+    assert "二次验证" in session.error
+    _apply_event(session, {"event": "status", "status": "scanned"})
+    assert "二次验证" in session.error
+
+
+def test_success_event_requires_authenticated_cookie():
+    from muztool.douyin_qr import _apply_event
+
+    session = QrSession(login_id="a", user_id="b")
+    _apply_event(session, {"event": "success", "cookies": []})
+    assert session.status == "failed"
+    assert "Cookie" in session.error
+
+
+def test_merge_cookies_keeps_latest_value_by_scope():
+    cookies = _merge_cookies(
+        [{"name": "sessionid", "value": "old", "domain": ".douyin.com", "path": "/"}],
+        [{"name": "sessionid", "value": "new", "domain": ".douyin.com", "path": "/"}],
+    )
+    assert cookies == [{"name": "sessionid", "value": "new", "domain": ".douyin.com", "path": "/"}]
+
+
+def test_normalize_cookies_scopes_douyin_cookies_for_creator_pages():
+    cookies = normalize_cookies([{"name": "sessionid", "value": "x", "domain": "www.douyin.com"}])
+    assert cookies[0]["domain"] == ".douyin.com"

@@ -10,7 +10,7 @@ from typing import Any
 import fcntl
 
 from .config import DATA_DIR, ensure_dirs
-from .security import hash_password, new_id, new_token, validate_password, validate_username, verify_password
+from .security import decrypt_secret, encrypt_secret, hash_password, new_id, new_token, validate_password, validate_username, verify_password
 
 TZ_BEIJING = timezone(timedelta(hours=8))
 
@@ -50,21 +50,9 @@ def user_path(user_id: str) -> Path:
 
 
 def ensure_approvals(user: dict[str, Any]) -> dict[str, Any]:
-    approvals = user.setdefault("approvals", {})
-    legacy = user.get("student", {}).get("status")
-    for key in FEATURE_KEYS:
-        if key in approvals and approvals[key]:
-            continue
-        if legacy == "approved":
-            approvals[key] = "approved"
-        elif legacy == "pending":
-            approvals[key] = "pending"
-        elif legacy == "rejected":
-            approvals[key] = "rejected"
-        else:
-            approvals[key] = "none"
+    """Compatibility projection after approval mode was removed in v1.3.0."""
+    user["approvals"] = {key: "approved" for key in FEATURE_KEYS}
     return user
-
 
 def set_feature_approval(user: dict[str, Any], feature: str, status: str) -> dict[str, Any]:
     if feature not in FEATURE_KEYS:
@@ -85,7 +73,7 @@ def empty_user(username: str, password: str, display_name: str) -> dict[str, Any
         "created_at": now_iso(),
         "student": {
             "student_id": "",
-            "password": "",
+            "password_encrypted": "",
             "real_name": "",
             "uid": "",
             "session_id": "",
@@ -95,7 +83,7 @@ def empty_user(username: str, password: str, display_name: str) -> dict[str, Any
             "today_schedule": [],
             "schedule_date": "",
         },
-        "approvals": {"signin": "none", "td": "none", "spark": "none"},
+        "approvals": {"signin": "approved", "td": "approved", "spark": "approved"},
         "td": {
             "campus": "xueyuanlu",
             "gap_seconds": 240,
@@ -109,12 +97,56 @@ def empty_user(username: str, password: str, display_name: str) -> dict[str, Any
             "enabled": False,
             "default_message": "续火花",
             "targets": [],
+            "friends_cache": [],
+            "friends_cached_at": "",
             "hour": 9,
             "last_run": "",
+            "last_auto_run": "",
+            "last_auto_attempt": "",
         },
+        "tibo": {"enabled": False},
         "devices": [],
         "notifications": [],
     }
+
+
+def set_student_password(student: dict[str, Any], password: str) -> None:
+    student["password_encrypted"] = encrypt_secret(password) if password else ""
+    student.pop("password", None)
+
+
+def get_student_password(student: dict[str, Any]) -> str:
+    encrypted = student.get("password_encrypted")
+    if encrypted:
+        return decrypt_secret(encrypted)
+    return str(student.get("password") or "")
+
+
+def student_runtime(student: dict[str, Any]) -> dict[str, Any]:
+    runtime = deepcopy(student)
+    runtime["password"] = get_student_password(student)
+    return runtime
+
+
+def migrate_user_secrets(user: dict[str, Any]) -> bool:
+    changed = False
+    student = user.setdefault("student", {})
+    legacy = str(student.get("password") or "")
+    if legacy:
+        set_student_password(student, legacy)
+        changed = True
+    elif "password" in student:
+        student.pop("password", None)
+        student.setdefault("password_encrypted", "")
+        changed = True
+    elif "password_encrypted" not in student:
+        student["password_encrypted"] = ""
+        changed = True
+    before = dict(user.get("approvals") or {})
+    ensure_approvals(user)
+    if before != user.get("approvals"):
+        changed = True
+    return changed
 
 
 def load_user(user_id: str) -> dict[str, Any] | None:
@@ -122,13 +154,14 @@ def load_user(user_id: str) -> dict[str, Any] | None:
     if not path.exists():
         return None
     data = _locked_read(path, {})
-    if data:
-        ensure_approvals(data)
+    if data and migrate_user_secrets(data):
+        _locked_write(path, data)
     return data
 
 
 def save_user(user: dict[str, Any]) -> None:
     ensure_dirs()
+    migrate_user_secrets(user)
     _locked_write(user_path(user["id"]), user)
 
 
@@ -138,6 +171,8 @@ def iter_users() -> list[dict[str, Any]]:
     for path in sorted((DATA_DIR / "users").glob("*.json")):
         data = _locked_read(path, {})
         if data.get("id"):
+            if migrate_user_secrets(data):
+                _locked_write(path, data)
             users.append(data)
     return users
 
@@ -217,6 +252,8 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
         "id": user.get("id"),
         "username": user.get("username"),
         "display_name": user.get("display_name"),
+        "role": "admin" if str(user.get("username") or "").lower() == "muzermat" else "user",
+        "can_manage_invites": str(user.get("username") or "").lower() == "muzermat",
         "created_at": user.get("created_at"),
         "student": {
             "student_id": student.get("student_id", ""),
@@ -227,6 +264,7 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
         },
         "approvals": ensure_approvals(user).get("approvals", {}),
         "td": user.get("td", {}),
+        "tibo": {"enabled": bool(user.get("tibo", {}).get("enabled", False))},
         "douyin": {
             "connected": bool(user.get("douyin", {}).get("cookies")),
             "username": user.get("douyin", {}).get("username", ""),
@@ -235,6 +273,8 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
             "targets": user.get("douyin", {}).get("targets", []),
             "hour": user.get("douyin", {}).get("hour", 9),
             "last_run": user.get("douyin", {}).get("last_run", ""),
+            "last_auto_run": user.get("douyin", {}).get("last_auto_run", ""),
+            "last_auto_attempt": user.get("douyin", {}).get("last_auto_attempt", ""),
         },
     }
 

@@ -87,7 +87,7 @@ class HomeViewModel(
                         displayName = prefs.displayName?.ifBlank { "同学" } ?: "同学",
                         studentStatus = home.student,
                         scheduleItems = home.schedule.schedule,
-                        autoSigninEnabled = home.schedule.enabled,
+                        autoSigninEnabled = home.schedule.enabled || home.student.autoSignin,
                         tdStatus = home.td ?: current.tdStatus,
                         sunshineStatus = home.sunshine ?: current.sunshineStatus
                     )
@@ -100,12 +100,12 @@ class HomeViewModel(
             val scheduleDeferred = async { apiClient.getSigninSchedule(cached = !isRefresh) }
             val studentRes = studentDeferred.await()
             val student = studentRes.getOrNull()
-            val tdApproved = student?.let { it.tdStatus == "approved" || it.approvals.td == "approved" } == true
+            val canQueryTd = !student?.studentId.isNullOrBlank()
             val tdDeferred = async {
-                if (tdApproved) apiClient.getTdStatus() else Result.success(TdStatusResponse())
+                if (canQueryTd) apiClient.getTdStatus() else Result.success(TdStatusResponse())
             }
             val sunshineDeferred = async {
-                if (tdApproved) apiClient.getSunshineStatus() else Result.success(SunshineStatusResponse())
+                if (canQueryTd) apiClient.getSunshineStatus() else Result.success(SunshineStatusResponse())
             }
 
             val userRes = userDeferred.await()
@@ -126,7 +126,7 @@ class HomeViewModel(
                     hasLoaded = true,
                     studentStatus = studentRes.getOrDefault(current.studentStatus),
                     scheduleItems = scheduleRes.map { it.schedule }.getOrDefault(current.scheduleItems),
-                    autoSigninEnabled = scheduleRes.map { it.enabled }.getOrDefault(current.autoSigninEnabled),
+                    autoSigninEnabled = scheduleRes.getOrNull()?.enabled ?: student?.autoSignin ?: current.autoSigninEnabled,
                     tdStatus = tdRes.getOrDefault(current.tdStatus),
                     sunshineStatus = sunshineRes.getOrDefault(current.sunshineStatus)
                 )

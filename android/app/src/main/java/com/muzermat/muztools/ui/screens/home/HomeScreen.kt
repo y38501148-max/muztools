@@ -22,9 +22,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.muzermat.muztools.data.model.SigninScheduleItem
-import com.muzermat.muztools.ui.components.PendingApprovalBanner
 import com.muzermat.muztools.ui.components.SectionHeader
 import com.muzermat.muztools.ui.components.StatusBadge
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,6 +33,26 @@ fun HomeScreen(
     onNavigateToFeature: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var loadingProgress by remember { mutableIntStateOf(0) }
+    var showInitialLoading by remember { mutableStateOf(!uiState.hasLoaded) }
+    val latestHasLoaded by rememberUpdatedState(uiState.hasLoaded)
+
+    LaunchedEffect(Unit) {
+        val startedAt = android.os.SystemClock.elapsedRealtime()
+        while (true) {
+            val elapsed = android.os.SystemClock.elapsedRealtime() - startedAt
+            val timeProgress = ((elapsed.coerceAtMost(3200L) * 90L) / 3200L).toInt()
+            loadingProgress = maxOf(loadingProgress, timeProgress.coerceAtMost(90))
+            if (latestHasLoaded && elapsed >= 3200L) break
+            delay(40)
+        }
+        while (loadingProgress < 100) {
+            delay(35)
+            loadingProgress = (loadingProgress + 2).coerceAtMost(100)
+        }
+        delay(120)
+        showInitialLoading = false
+    }
 
     LaunchedEffect(Unit) {
         viewModel.loadIfNeeded()
@@ -102,16 +122,37 @@ fun HomeScreen(
             }
         }
     ) { paddingValues ->
-        if (uiState.isLoading && !uiState.isRefreshing) {
-            Box(
+        if (showInitialLoading && !uiState.isRefreshing) {
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
+                    .padding(paddingValues)
+                    .padding(horizontal = 42.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 CircularProgressIndicator(
                     strokeWidth = 3.dp,
                     color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = "正在加载中",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                LinearProgressIndicator(
+                    progress = { loadingProgress / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "$loadingProgress%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         } else {
@@ -121,12 +162,6 @@ fun HomeScreen(
                     .padding(paddingValues),
                 contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
             ) {
-                if (uiState.studentStatus.status == "pending" || uiState.studentStatus.status == "待审批") {
-                    item {
-                        PendingApprovalBanner()
-                    }
-                }
-
                 // 快捷统计卡片 (TD / 阳光体育)
                 item {
                     SectionHeader(title = "体育与锻炼概况")

@@ -13,6 +13,11 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
 import java.io.File
 import java.io.IOException
+import java.math.BigInteger
+import java.security.KeyFactory
+import java.security.spec.RSAPublicKeySpec
+import javax.crypto.Cipher
+import android.util.Base64
 import java.util.concurrent.TimeUnit
 
 class ApiClient(private val prefs: PreferencesManager) {
@@ -29,7 +34,7 @@ class ApiClient(private val prefs: PreferencesManager) {
         .readTimeout(20, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
         .addInterceptor(HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = HttpLoggingInterceptor.Level.BASIC
         })
         .addInterceptor { chain ->
             val original = chain.request()
@@ -121,12 +126,50 @@ class ApiClient(private val prefs: PreferencesManager) {
         }
     }
 
+    private suspend inline fun <reified REQ, reified RES> executeDelete(path: String, bodyObj: REQ): Result<RES> = withContext(Dispatchers.IO) {
+        val bodyJson = json.encodeToString(bodyObj)
+        val request = Request.Builder()
+            .url(getFullUrl(path))
+            .delete(bodyJson.toRequestBody(jsonMediaType))
+            .build()
+        try {
+            val response = okHttpClient.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            if (response.isSuccessful) Result.success(json.decodeFromString<RES>(responseBody))
+            else Result.failure(ApiException(response.code, responseBody.ifBlank { response.message }))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun transportKey(): Result<TransportPublicKey> =
+        executeGet("/api/security/public-key")
+
+    private fun encryptValue(value: String, key: TransportPublicKey): String {
+        val publicKey = KeyFactory.getInstance("RSA").generatePublic(
+            RSAPublicKeySpec(BigInteger(key.modulusHex, 16), BigInteger.valueOf(key.exponent))
+        )
+        val cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding")
+        cipher.init(Cipher.ENCRYPT_MODE, publicKey)
+        return Base64.encodeToString(cipher.doFinal(value.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
+    }
+
+    private suspend fun encryptedRequest(fields: Map<String, String>, keepLogin: Boolean = false): Result<EncryptedCredentialRequest> {
+        return transportKey().mapCatching { key ->
+            EncryptedCredentialRequest(fields.mapValues { encryptValue(it.value, key) }, keepLogin)
+        }
+    }
+
     // Auth APIs
     suspend fun register(req: RegisterRequest): Result<AuthResponse> =
-        executePost("/api/auth/register", req)
+        encryptedRequest(
+            mapOf("username" to req.username, "password" to req.password, "display_name" to req.displayName, "invite_code" to req.inviteCode),
+            keepLogin = true
+        ).fold(onSuccess = { executePost("/api/auth/register", it) }, onFailure = { Result.failure(it) })
 
     suspend fun login(req: LoginRequest): Result<AuthResponse> =
-        executePost("/api/auth/login", req)
+        encryptedRequest(mapOf("username" to req.username, "password" to req.password), keepLogin = true)
+            .fold(onSuccess = { executePost("/api/auth/login", it) }, onFailure = { Result.failure(it) })
 
     suspend fun getMe(): Result<User> =
         executeGet("/api/me")
@@ -134,12 +177,22 @@ class ApiClient(private val prefs: PreferencesManager) {
     suspend fun registerDevice(deviceId: String): Result<GenericApiResponse> =
         executePost("/api/devices", DeviceRegisterRequest(deviceId))
 
+    suspend fun registerFcmToken(token: String, deviceId: String, appVersion: String): Result<GenericApiResponse> =
+        executePost("/api/devices/fcm", FcmTokenRequest(token, deviceId, appVersion))
+
+    suspend fun unregisterFcmToken(token: String): Result<GenericApiResponse> =
+        executeDelete("/api/devices/fcm", mapOf("token" to token))
+
     suspend fun getNotifications(): Result<List<NotificationItem>> =
         executeGet("/api/notifications")
 
     // Student & Signin APIs
     suspend fun bindStudent(req: StudentBindRequest): Result<GenericApiResponse> =
-        executePost("/api/student/bind", req)
+        encryptedRequest(mapOf("student_id" to req.studentId, "password" to req.password))
+            .fold(onSuccess = { executePost("/api/student/bind", it) }, onFailure = { Result.failure(it) })
+
+    suspend fun issueInvite(): Result<InviteIssueResponse> =
+        executePost("/api/invites/issue", emptyMap<String, String>())
 
     suspend fun getStudentStatus(): Result<StudentStatusResponse> =
         executeGet("/api/student")
@@ -196,8 +249,24 @@ class ApiClient(private val prefs: PreferencesManager) {
         executePost("/api/td/manual", req)
 
     // Douyin APIs
-    suspend fun submitDouyinSession(cookies: String): Result<DouyinSessionResponse> =
-        executePost("/api/douyin/session", DouyinSessionRequest(cookies))
+    suspend fun submitDouyinSession(cookies: String): Result<DouyinSessionResponse> = withContext(Dispatchers.IO) {
+        val bodyJson = json.encodeToString(DouyinSessionRequest(cookies))
+        val request = Request.Builder()
+            .url(getFullUrl("/api/douyin/session"))
+            .post(bodyJson.toRequestBody(jsonMediaType))
+            .build()
+        try {
+            val response = longClient().newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(json.decodeFromString<DouyinSessionResponse>(responseBody))
+            } else {
+                Result.failure(ApiException(response.code, responseBody.ifBlank { response.message }))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     suspend fun startDouyinQr(): Result<DouyinQrResponse> = withContext(Dispatchers.IO) {
         val request = Request.Builder()
@@ -226,11 +295,33 @@ class ApiClient(private val prefs: PreferencesManager) {
     suspend fun getDouyinSession(): Result<DouyinSessionResponse> =
         executeGet("/api/douyin/session")
 
+    suspend fun getDouyinFriends(refresh: Boolean = false): Result<DouyinFriendsResponse> = withContext(Dispatchers.IO) {
+        val path = "/api/douyin/friends" + if (refresh) "?refresh=1" else ""
+        val request = Request.Builder().url(getFullUrl(path)).get().build()
+        try {
+            val response = longClient().newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(json.decodeFromString<DouyinFriendsResponse>(body))
+            } else {
+                Result.failure(ApiException(response.code, body.ifBlank { response.message }))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun updateDouyinConfig(config: DouyinConfig): Result<GenericApiResponse> =
         executePut("/api/douyin/config", config)
 
     suspend fun runDouyinSpark(): Result<GenericApiResponse> =
         executePost("/api/douyin/run", emptyMap<String, String>())
+
+    suspend fun getTiboHistory(): Result<TiboHistoryResponse> =
+        executeGet("/api/tibo/history")
+
+    suspend fun updateTiboConfig(enabled: Boolean): Result<TiboConfigResponse> =
+        executePut("/api/tibo/config", TiboConfigRequest(enabled))
 
     suspend fun getAppVersion(): Result<AppVersion> =
         executeGet("/api/app/version")

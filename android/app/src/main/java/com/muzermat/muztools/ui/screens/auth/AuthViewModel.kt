@@ -17,6 +17,7 @@ data class AuthUiState(
     val username: String = "",
     val displayName: String = "",
     val password: String = "",
+    val inviteCode: String = "",
     val rememberPassword: Boolean = false,
     val autoLogin: Boolean = false,
     val isLoading: Boolean = false,
@@ -26,7 +27,8 @@ data class AuthUiState(
 
 class AuthViewModel(
     private val apiClient: ApiClient,
-    private val prefs: PreferencesManager
+    private val prefs: PreferencesManager,
+    private val onAuthenticated: () -> Unit = {}
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -64,6 +66,10 @@ class AuthViewModel(
 
     fun onPasswordChange(pwd: String) {
         _uiState.update { it.copy(password = pwd, errorMessage = null) }
+    }
+
+    fun onInviteCodeChange(code: String) {
+        _uiState.update { it.copy(inviteCode = code, errorMessage = null) }
     }
 
     fun onRememberPasswordChange(enabled: Boolean) {
@@ -128,6 +134,10 @@ class AuthViewModel(
             _uiState.update { it.copy(errorMessage = "请填写显示名") }
             return
         }
+        if (state.inviteCode.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "请输入邀请码") }
+            return
+        }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
@@ -135,7 +145,8 @@ class AuthViewModel(
                 RegisterRequest(
                     username = state.username.trim(),
                     password = state.password,
-                    displayName = state.displayName.trim()
+                    displayName = state.displayName.trim(),
+                    inviteCode = state.inviteCode.trim()
                 )
             )
             handleAuthResult(res, state, isRegister = true)
@@ -161,6 +172,7 @@ class AuthViewModel(
                         autoLoginEnabled = state.autoLogin
                     )
                     apiClient.registerDevice(prefs.deviceId)
+                    onAuthenticated()
                     _uiState.update { it.copy(isLoading = false, isLoggedIn = true, username = username, displayName = displayName) }
                 } else if (isRegister) {
                     login()

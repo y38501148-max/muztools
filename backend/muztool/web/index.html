@@ -2,18 +2,23 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>盐的工具箱</title>
   <style>
     :root {
       --primary: #1e60d5;
+      --primary-hover: #154fb3;
       --primary-soft: #e8f0fe;
       --primary-deep: #0f3b8f;
+      --secondary: #4c6684;
       --bg: #f6f8fc;
       --card: #ffffff;
+      --card-alt: #f0f4fa;
       --text: #181c20;
       --muted: #535d6e;
+      --muted-light: #8896ab;
       --line: #e3e8f0;
+      --line-subtle: #edf2f9;
       --ok: #1e8e3e;
       --ok-bg: #e8f7ee;
       --warn: #b45309;
@@ -21,456 +26,2572 @@
       --err: #d93025;
       --err-bg: #fdecea;
       --spark: #e65100;
+      --spark-soft: #fff3e0;
       --td: #0288d1;
-      --shadow: 0 10px 30px rgba(24, 44, 84, .08);
+      --td-soft: #e1f5fe;
+      --shadow-sm: 0 2px 8px rgba(24, 44, 84, .04);
+      --shadow: 0 8px 24px rgba(24, 44, 84, .07);
+      --shadow-lg: 0 16px 40px rgba(30, 96, 213, .18);
+      --radius-sm: 10px;
+      --radius: 16px;
+      --radius-lg: 22px;
+      --radius-full: 9999px;
     }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif; }
-    body { padding-bottom: env(safe-area-inset-bottom); }
-    button, input, select, textarea { font: inherit; }
-    button { cursor: pointer; }
-    a { color: var(--primary); }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    button, input, select, textarea {
+      font: inherit;
+      color: inherit;
+      border: none;
+      outline: none;
+    }
+    button {
+      cursor: pointer;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all .18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    button:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+    a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
     .hidden { display: none !important; }
-    .app-shell { max-width: 760px; margin: 0 auto; min-height: 100vh; position: relative; }
-    .page { padding: 18px 18px 110px; }
-    h1 { font-size: 28px; margin: 8px 0 6px; }
-    h2 { font-size: 22px; margin: 0; }
-    h3 { font-size: 16px; margin: 0 0 8px; }
+
+    /* Layout Shell */
+    .app-shell {
+      max-width: 760px;
+      margin: 0 auto;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .page {
+      flex: 1;
+      padding: 16px 16px 96px;
+    }
+
+    /* Typography */
+    h1 { font-size: 26px; font-weight: 800; margin: 0; letter-spacing: -0.5px; }
+    h2 { font-size: 20px; font-weight: 700; margin: 0; }
+    h3 { font-size: 15px; font-weight: 700; margin: 0; }
     p { margin: 0; }
     .muted { color: var(--muted); font-size: 13px; line-height: 1.5; }
-    .brand { display: flex; gap: 12px; align-items: center; }
-    .logo { width: 42px; height: 42px; border-radius: 14px; background: var(--primary-soft); color: var(--primary); display: grid; place-items: center; font-weight: 800; }
-    .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 16px; margin: 0 0 12px; box-shadow: var(--shadow); }
-    .card.click { cursor: pointer; }
-    .card.click:hover { border-color: #c9d7f3; }
+    .muted-sm { color: var(--muted); font-size: 12px; }
+
+    /* Cards */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .card.click {
+      cursor: pointer;
+    }
+    .card.click:hover {
+      border-color: #cbdcf8;
+      box-shadow: var(--shadow);
+    }
+    .card.click:active {
+      transform: scale(0.99);
+    }
+
+    /* Hero Card */
+    .hero {
+      background: linear-gradient(135deg, #1e60d5 0%, #3d7ff5 100%);
+      color: #ffffff;
+      border-radius: 24px;
+      padding: 20px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::after {
+      content: '';
+      position: absolute;
+      right: -30px;
+      bottom: -40px;
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      pointer-events: none;
+    }
+    .hero .muted { color: rgba(255, 255, 255, 0.82); }
+
+    .hero-stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .hero-stat {
+      background: rgba(255, 255, 255, 0.14);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+    }
+    .hero-stat .label { font-size: 12px; color: rgba(255, 255, 255, 0.85); font-weight: 500; }
+    .hero-stat .val { font-size: 22px; font-weight: 800; margin-top: 2px; }
+
+    /* Topbars & Navigation */
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      gap: 12px;
+      min-height: 44px;
+    }
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    /* Fixed Bottom Nav Bar */
+    .nav {
+      position: fixed;
+      left: 50%;
+      bottom: 0;
+      transform: translateX(-50%);
+      width: min(760px, 100%);
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid var(--line);
+      display: flex;
+      padding-bottom: max(env(safe-area-inset-bottom), 6px);
+      padding-top: 4px;
+      z-index: 100;
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.03);
+    }
+    .nav button {
+      flex: 1;
+      background: none;
+      border: 0;
+      color: var(--muted);
+      padding: 6px 0 6px;
+      font-weight: 600;
+      font-size: 11px;
+      flex-direction: column;
+      gap: 3px;
+      border-radius: 12px;
+      margin: 2px 6px;
+    }
+    .nav button .nav-icon {
+      font-size: 18px;
+      line-height: 1;
+    }
+    .nav button.active {
+      color: var(--primary);
+      font-weight: 700;
+    }
+    .nav button.active .nav-icon {
+      transform: scale(1.1);
+    }
+
+    /* Grids & Flex Layouts */
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid-1 { display: grid; grid-template-columns: 1fr; gap: 12px; }
     .row { display: flex; gap: 10px; align-items: center; }
-    .stack { display: grid; gap: 10px; }
-    .btn { border: 0; border-radius: 14px; padding: 11px 14px; background: var(--primary); color: #fff; font-weight: 700; }
-    .btn.soft { background: var(--primary-soft); color: var(--primary-deep); }
-    .btn.ghost { background: #fff; color: var(--text); border: 1px solid var(--line); }
-    .btn.wide { width: 100%; }
-    .btn:disabled { opacity: .45; cursor: not-allowed; }
-    input, textarea, select { width: 100%; background: #fff; color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 11px 12px; }
-    textarea { min-height: 110px; resize: vertical; }
-    label { display: block; margin: 10px 0 6px; color: var(--muted); font-size: 13px; }
-    .badge { font-size: 12px; padding: 3px 8px; border-radius: 999px; background: var(--primary-soft); color: var(--primary-deep); font-weight: 700; }
+    .row-between { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .stack { display: flex; flex-direction: column; gap: 10px; }
+    .center { text-align: center; }
+
+    /* Buttons */
+    .btn {
+      border-radius: var(--radius);
+      padding: 10px 16px;
+      background: var(--primary);
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 14px;
+      height: 42px;
+      box-shadow: 0 2px 6px rgba(30, 96, 213, 0.2);
+    }
+    .btn:hover:not(:disabled) {
+      background: var(--primary-hover);
+    }
+    .btn.soft {
+      background: var(--primary-soft);
+      color: var(--primary-deep);
+      box-shadow: none;
+    }
+    .btn.soft:hover:not(:disabled) {
+      background: #d6e4fd;
+    }
+    .btn.ghost {
+      background: #ffffff;
+      color: var(--text);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-sm);
+    }
+    .btn.ghost:hover:not(:disabled) {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+    .btn.danger {
+      background: var(--err-bg);
+      color: var(--err);
+      box-shadow: none;
+    }
+    .btn.danger:hover:not(:disabled) {
+      background: #fcdbd8;
+    }
+    .btn.sm {
+      padding: 6px 12px;
+      height: 32px;
+      font-size: 12px;
+      border-radius: var(--radius-sm);
+    }
+    .btn.wide {
+      width: 100%;
+    }
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+    .btn.loading {
+      pointer-events: none;
+      position: relative;
+      color: transparent !important;
+    }
+    .btn.loading::after {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      top: 50%;
+      left: 50%;
+      margin: -9px 0 0 -9px;
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    .btn.soft.loading::after, .btn.ghost.loading::after {
+      border: 2px solid rgba(30, 96, 213, 0.2);
+      border-top-color: var(--primary);
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Inputs */
+    .input-group {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      margin: 0 0 6px 2px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    input, textarea, select {
+      width: 100%;
+      background: #ffffff;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 14px;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(30, 96, 213, 0.12);
+    }
+    input::placeholder, textarea::placeholder {
+      color: #9aa5b8;
+    }
+    textarea {
+      min-height: 90px;
+      resize: vertical;
+      line-height: 1.4;
+    }
+
+    /* Badges */
+    .badge {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: var(--radius-full);
+      background: var(--primary-soft);
+      color: var(--primary-deep);
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
     .badge.ok { background: var(--ok-bg); color: var(--ok); }
     .badge.warn { background: var(--warn-bg); color: var(--warn); }
     .badge.err { background: var(--err-bg); color: var(--err); }
     .badge.gray { background: #eef2f8; color: var(--muted); }
-    .nav { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(760px, 100%); background: rgba(255,255,255,.94); backdrop-filter: blur(14px); border-top: 1px solid var(--line); display: flex; padding-bottom: env(safe-area-inset-bottom); }
-    .nav button { flex: 1; background: none; border: 0; color: var(--muted); padding: 10px 0 12px; font-weight: 600; }
-    .nav button.active { color: var(--primary); }
-    .toast { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); background: #182033; color: #fff; padding: 10px 14px; border-radius: 14px; z-index: 30; box-shadow: var(--shadow); max-width: 86%; }
-    .hero { background: linear-gradient(135deg, #1e60d5, #4c8dff); color: #fff; border-radius: 26px; padding: 22px; margin-bottom: 14px; box-shadow: 0 16px 40px rgba(30,96,213,.25); }
-    .hero .muted { color: rgba(255,255,255,.82); }
-    .stat { background: #fff; border-radius: 18px; padding: 14px; }
-    .stat b { font-size: 24px; display: block; margin-top: 4px; }
-    .icon { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font-size: 20px; flex: none; }
-    .list { display: grid; gap: 0; }
-    .list-item { padding: 12px 0; border-top: 1px solid var(--line); }
-    .list-item:first-child { border-top: 0; padding-top: 4px; }
-    .qr { width: 240px; height: 240px; background: #fff; border-radius: 20px; margin: 12px auto; object-fit: contain; box-shadow: var(--shadow); display: block; }
-    .center { text-align: center; }
-    .empty { padding: 18px 8px; color: var(--muted); text-align: center; }
-    .auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: linear-gradient(180deg, #eaf1ff 0%, #f6f8fc 42%); }
-    .auth-card { width: min(430px, 100%); }
-    .busy { opacity: .7; pointer-events: none; }
+
+    /* Icons */
+    .icon-box {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    /* List items */
+    .list-item {
+      padding: 12px 0;
+      border-top: 1px solid var(--line-subtle);
+    }
+    .list-item:first-child {
+      border-top: 0;
+      padding-top: 2px;
+    }
+    .list-item:last-child {
+      padding-bottom: 2px;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      left: 50%;
+      top: 20px;
+      transform: translateX(-50%) translateY(-20px);
+      background: #1e293b;
+      color: #ffffff;
+      padding: 10px 18px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 600;
+      z-index: 10000;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      max-width: 90%;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+      pointer-events: auto;
+    }
+
+    /* Modal / Dialog */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      z-index: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .modal-backdrop.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modal-box {
+      background: #ffffff;
+      border-radius: 24px;
+      padding: 20px;
+      width: min(440px, 100%);
+      box-shadow: var(--shadow-lg);
+      transform: scale(0.95);
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-backdrop.show .modal-box {
+      transform: scale(1);
+    }
+
+    /* Auth View Specific */
+    .auth-wrap {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px 16px;
+      background: linear-gradient(180deg, #e8f0fe 0%, #f6f8fc 38%);
+    }
+    .auth-card {
+      width: min(420px, 100%);
+    }
+    .auth-options {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin: 2px 0 14px;
+    }
+    .auth-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+    }
+    .auth-option input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--primary);
+    }
+
+    /* QR Code Display */
+    .qr-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+      background: var(--card-alt);
+      border-radius: var(--radius);
+      margin: 12px 0;
+    }
+    .qr-img {
+      width: 210px;
+      height: 210px;
+      background: #ffffff;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+      object-fit: contain;
+      padding: 8px;
+    }
+
+    .empty-state {
+      padding: 28px 16px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .empty-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+      opacity: 0.6;
+    }
+
+    /* Section header */
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 14px 0 8px 4px;
+    }
   </style>
 </head>
 <body>
-  <div id="toast" class="toast hidden"></div>
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Global Modal Container -->
+  <div id="modal-container" class="modal-backdrop"></div>
+
+  <!-- Main Shell -->
   <div class="app-shell">
-    <section id="auth" class="auth-wrap">
+
+    <!-- Auth View (Login / Register) -->
+    <section id="auth-screen" class="auth-wrap">
       <div class="auth-card">
-        <div class="brand"><div class="logo">盐</div><div><h1>盐的工具箱</h1><p class="muted">自动签到 · TD / 阳光 · 抖音续火花</p></div></div>
-        <div class="card" style="margin-top:18px">
-          <label>用户名</label>
-          <input id="auth-user" autocomplete="username" placeholder="6～18 位字母、数字或下划线" />
-          <div id="auth-nick-wrap" class="hidden">
-            <label>显示名</label>
-            <input id="auth-nick" placeholder="同学怎么称呼你" />
+        <div class="brand" style="justify-content: center; margin-bottom: 20px;">
+          <div class="logo" style="width: 48px; height: 48px; font-size: 24px; border-radius: 16px;">盐</div>
+          <div>
+            <h1 style="font-size: 24px; color: var(--primary);">盐的工具箱</h1>
+            <p class="muted-sm">自动签到 · TD/阳光 · 抖音续火花</p>
           </div>
-          <label>密码</label>
-          <input id="auth-pass" type="password" autocomplete="current-password" placeholder="须含数字、大写和小写字母" />
-          <button class="btn wide" id="auth-submit" style="margin-top:16px">登录</button>
-          <p class="center muted" style="margin-top:12px"><a href="#/register" id="auth-switch">没有账号？去注册</a></p>
+        </div>
+
+        <div class="card" style="padding: 22px;">
+          <h2 id="auth-title" style="margin-bottom: 16px; font-size: 18px;">账号登录</h2>
+
+          <div class="input-group">
+            <label for="auth-user">用户名</label>
+            <input type="text" id="auth-user" autocomplete="username" placeholder="6～18 位字母、数字或下划线" />
+          </div>
+
+          <div id="auth-nick-wrap" class="input-group hidden">
+            <label for="auth-nick">显示名（昵称）</label>
+            <input type="text" id="auth-nick" placeholder="同学怎么称呼你" />
+          </div>
+          <div id="auth-invite-wrap" class="input-group hidden">
+            <label for="auth-invite">邀请码</label>
+            <input type="text" id="auth-invite" autocomplete="off" placeholder="请输入有效邀请码" />
+          </div>
+
+          <div class="input-group">
+            <label for="auth-pass">密码</label>
+            <div style="position: relative;">
+              <input type="password" id="auth-pass" autocomplete="current-password" placeholder="须含数字、大写和小写字母" style="padding-right: 42px;" />
+              <button type="button" id="btn-toggle-pass" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; color: var(--muted); font-size: 16px; padding: 4px;">👁</button>
+            </div>
+          </div>
+
+          <div id="auth-options" class="auth-options">
+            <label class="auth-option" for="auth-save-login">
+              <input type="checkbox" id="auth-save-login" checked />
+              <span>保持登录</span>
+            </label>
+          </div>
+          <p id="auth-save-hint" class="muted-sm" style="margin: -4px 0 12px; line-height: 1.5;">仅在本浏览器保存，清除浏览器数据后会失效。</p>
+
+          <button type="button" class="btn wide" id="auth-submit" style="margin-top: 4px; height: 46px; font-size: 15px;">登 录</button>
+
+          <div class="center" style="margin-top: 16px;">
+            <a href="#/register" id="auth-switch-link" data-nav="register" style="font-size: 13px;">没有账号？去注册</a>
+          </div>
         </div>
       </div>
     </section>
 
-    <section id="app" class="hidden">
-      <div class="page" id="view"></div>
+    <!-- App View (Logged in) -->
+    <section id="app-screen" class="hidden">
+      <!-- Dynamic Page Container -->
+      <main class="page" id="view-container"></main>
+
+      <!-- Bottom Tabbar -->
       <nav class="nav" id="tabbar">
-        <button data-route="home" class="active">首页</button>
-        <button data-route="features">功能</button>
-        <button data-route="profile">我的</button>
+        <button type="button" data-nav="home" id="tab-home" class="active">
+          <span class="nav-icon">🏠</span>
+          <span>首页</span>
+        </button>
+        <button type="button" data-nav="features" id="tab-features">
+          <span class="nav-icon">⚡</span>
+          <span>功能</span>
+        </button>
+        <button type="button" data-nav="profile" id="tab-profile">
+          <span class="nav-icon">👤</span>
+          <span>我的</span>
+        </button>
       </nav>
     </section>
+
   </div>
 
 <script>
-const $ = (id) => document.getElementById(id);
-const state = { token: localStorage.getItem("muz_token") || "", user: null, student: {}, home: {}, notes: [], route: "home" };
-
-function toast(msg) {
-  const el = $("toast");
-  el.textContent = msg;
-  el.classList.remove("hidden");
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.add("hidden"), 2600);
-}
-function esc(v) { return String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
-function badge(status) {
-  const map = {
-    approved: ["ok","已通过"], pending: ["warn","待审批"], verified: ["ok","已认证"],
-    unbound: ["gray","未绑定"], signed: ["ok","已签"], none: ["gray","未申请"],
-    success: ["ok","成功"], failed: ["err","失败"], scanned: ["warn","已扫码"]
+/**
+ * 盐的工具箱 - 现代化 Web 前端核心逻辑 (IIFE 保证全局干净，杜绝 window.top 等全局变量冲突)
+ */
+(() => {
+  // 状态中心
+  const STORAGE_KEYS = {
+    token: "muz_token",
+    username: "muz_username",
+    legacyCredential: "muz_legacy_credential",
+    legacyRemember: "muz_legacy_remember",
+    saveLogin: "muz_save_login"
   };
-  const [cls, text] = map[status] || ["gray", status || "未知"];
-  return `<span class="badge ${cls}">${esc(text)}</span>`;
-}
-async function api(path, opts = {}) {
-  const headers = { "Accept": "application/json", ...(opts.headers || {}) };
-  if (state.token) headers.Authorization = "Bearer " + state.token;
-  if (opts.body && !(opts.body instanceof FormData) && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  const res = await fetch(path, {
-    ...opts,
-    headers,
-    body: opts.body instanceof FormData || typeof opts.body === "string" ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined
-  });
-  const text = await res.text();
-  let data = {};
-  try { data = text ? JSON.parse(text) : {}; } catch { data = { detail: text }; }
-  if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
-  return data;
-}
-function route() {
-  const hash = (location.hash || "#/home").replace(/^#\/?/, "");
-  return hash.split("?")[0] || "home";
-}
-function go(name) { location.hash = "#/" + name; }
 
-function showAuth(register) {
-  $("auth").classList.remove("hidden");
-  $("app").classList.add("hidden");
-  $("auth-nick-wrap").classList.toggle("hidden", !register);
-  $("auth-submit").textContent = register ? "注册" : "登录";
-  $("auth-switch").textContent = register ? "已有账号？去登录" : "没有账号？去注册";
-  $("auth-switch").href = register ? "#/login" : "#/register";
-}
-function showApp() {
-  $("auth").classList.add("hidden");
-  $("app").classList.remove("hidden");
-}
-
-$("auth-switch").onclick = (e) => { e.preventDefault(); go(route() === "register" ? "login" : "register"); };
-$("auth-submit").onclick = async () => {
-  try {
-    const username = $("auth-user").value.trim();
-    const password = $("auth-pass").value;
-    const isReg = route() === "register";
-    const body = isReg ? { username, password, display_name: $("auth-nick").value.trim() || username } : { username, password };
-    const data = await api(isReg ? "/api/auth/register" : "/api/auth/login", { method: "POST", body });
-    state.token = data.token;
-    localStorage.setItem("muz_token", data.token);
-    go("home");
-    await boot();
-  } catch (err) { toast(err.message); }
-};
-
-document.getElementById("tabbar").onclick = (e) => {
-  const btn = e.target.closest("button[data-route]");
-  if (btn) go(btn.dataset.route);
-};
-
-async function boot() {
-  if (!state.token) { showAuth(route() === "register"); return; }
-  showApp();
-  try {
-    await refreshAll();
-    await render();
-  } catch (err) {
-    if (String(err.message).includes("未登录")) {
-      localStorage.removeItem("muz_token");
-      state.token = "";
-      showAuth(false);
-    } else toast(err.message);
+  function readStoredToken() {
+    const localToken = localStorage.getItem(STORAGE_KEYS.token) || "";
+    const sessionToken = sessionStorage.getItem(STORAGE_KEYS.token) || "";
+    const keepLogin = localStorage.getItem(STORAGE_KEYS.saveLogin) === "true";
+    if (!localToken && sessionToken && keepLogin) {
+      localStorage.setItem(STORAGE_KEYS.token, sessionToken);
+      sessionStorage.removeItem(STORAGE_KEYS.token);
+      return sessionToken;
+    }
+    return localToken || sessionToken;
   }
-}
-async function refreshAll() {
-  const [me, student, home, notes] = await Promise.all([
-    api("/api/me"),
-    api("/api/student").catch(() => ({})),
-    api("/api/home?cached=1").catch(() => ({})),
-    api("/api/notifications").catch(() => [])
-  ]);
-  state.user = me;
-  state.student = student;
-  state.home = home;
-  state.notes = Array.isArray(notes) ? notes : (notes.items || []);
-}
 
-function top(title, right = "") {
-  return `<div class="topbar"><div class="brand"><div class="logo">盐</div><div><h2>${title}</h2><p class="muted">你好，${esc((state.user && (state.user.display_name || state.user.username)) || "同学")}</p></div></div>${right}</div>`;
-}
-function back(title) {
-  return `<div class="topbar"><button class="btn ghost" id="back-btn">返回</button><h2>${title}</h2><button class="btn soft" id="reload-btn">刷新</button></div>`;
-}
+  const state = {
+    token: readStoredToken(),
+    user: null,
+    student: {},
+    home: {},
+    notes: [],
+    douyinSession: null,
+    signinSchedule: null,
+    tdStatus: null,
+    sunshineStatus: null,
+    qrTimer: null,
+    qrSessionId: null,
+    sparkTargets: [],
+    douyinFriendResults: [],
+    douyinFriendsLoaded: false,
+    douyinFriendsLoading: false,
+    douyinFriendsError: "",
+    douyinFriendsCachedAt: "",
+    douyinFriendQuery: "",
+    tiboHistory: null,
+    liveSocket: null,
+    liveReconnectTimer: null,
+    tdBridgeWaiters: new Map()
+  };
 
-function homeView() {
-  const u = state.user || {}, s = state.student || {}, h = state.home || {};
-  const td = h.td || {}, sun = h.sunshine || {};
-  const courses = (h.schedule && (h.schedule.schedule || h.schedule.courses)) || [];
-  return `
-    ${top("盐的工具箱", badge(s.status))}
-    <div class="hero">
-      <p class="muted">今日概览</p>
-      <h2 style="margin:6px 0 14px">校园工具都在这里</h2>
-      <div class="grid">
-        <div class="stat"><span class="muted">TD 课外锻炼</span><b>${td.semester_count ?? "-"} / ${td.target_count ?? 32}</b></div>
-        <div class="stat"><span class="muted">阳光体育</span><b>${sun.count ?? "-"} / ${sun.target_count ?? 16}</b></div>
-      </div>
-    </div>
-    <div class="grid">
-      <div class="card click" data-go="signin"><h3>自动签到</h3><p class="muted">${u.student && u.student.auto_signin ? "已开启" : "未开启"}</p></div>
-      <div class="card click" data-go="spark"><h3>抖音续火花</h3><p class="muted">${u.douyin && u.douyin.connected ? "已登录" : "未登录"}</p></div>
-    </div>
-    <div class="card">
-      <h3>今日课程签到</h3>
-      ${courses.length ? courses.map(c => `<div class="list-item"><div class="row"><div style="flex:1"><b>${esc(c.course_name || c.courseName || "课程")}</b><p class="muted">${esc(c.start_time || "")} ${esc(c.classroom || "")}</p></div>${badge(c.status)}</div></div>`).join("") : `<div class="empty">暂无课程，或课表还没加载出来</div>`}
-    </div>`;
-}
+  // DOM 辅助
+  const $ = (id) => document.getElementById(id);
 
-function featuresView() {
-  const a = (state.user && state.user.approvals) || {};
-  const items = [
-    ["signin", "自动签到", "课表查询与定时自动签到", "常用", "#1e60d5", a.signin, "signin"],
-    ["td", "TD / 阳光", "体育锻炼次数查询与校园网直连打卡", "体育", "#0288d1", a.td, "td"],
-    ["spark", "抖音续火花", "抖音 App 扫码登录，每日自动续火花", "社交", "#e65100", a.spark, "spark"]
-  ];
-  return `${top("功能")}
-    ${items.map(([id, title, sub, tag, color, st, feature]) => `
-      <div class="card">
+  // 文本转义防止 XSS
+  function esc(str) {
+    return String(str ?? "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    }[c]));
+  }
+
+  // 统一状态徽章渲染
+  function renderBadge(statusVal) {
+    const map = {
+      approved: ["ok", "已通过"],
+      verified: ["ok", "已认证"],
+      signed: ["ok", "已签到"],
+      success: ["ok", "成功"],
+      connected: ["ok", "已登录"],
+      valid: ["ok", "有效"],
+      available: ["ok", "可用"],
+      pending: ["warn", "待处理"],
+      scanned: ["warn", "已扫码"],
+      unbound: ["gray", "未绑定"],
+      none: ["gray", "未配置"],
+      rejected: ["err", "已拒绝"],
+      failed: ["err", "失败"],
+      expired: ["err", "已过期"],
+      cancelled: ["gray", "已取消"]
+    };
+    const [cls, text] = map[statusVal] || ["gray", statusVal || "未知"];
+    return `<span class="badge ${cls}">${esc(text)}</span>`;
+  }
+
+  // Toast 提示框
+  let toastTimer = null;
+  function toast(msg, type = "info") {
+    const el = $("toast");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      el.classList.remove("show");
+    }, 2800);
+  }
+
+  // 规范化后端 FastAPI 错误
+  function parseApiError(data, statusText) {
+    if (!data) return statusText || "网络连接异常";
+    if (typeof data === "string") return data;
+    if (typeof data.detail === "string") return data.detail;
+    if (Array.isArray(data.detail)) {
+      return data.detail.map(item => {
+        const field = Array.isArray(item.loc) ? item.loc.filter(k => k !== "body").join(".") : "";
+        return (field ? field + ": " : "") + (item.msg || "格式有误");
+      }).join("; ") || "请求参数有误";
+    }
+    if (typeof data.detail === "object" && data.detail !== null) {
+      return JSON.stringify(data.detail);
+    }
+    if (typeof data.message === "string") return data.message;
+    if (typeof data.error === "string") return data.error;
+    return statusText || "操作失败";
+  }
+
+  // API 网络请求封装
+  async function api(path, opts = {}, allowSessionRetry = true) {
+    const headers = { "Accept": "application/json", ...(opts.headers || {}) };
+    if (state.token) {
+      headers.Authorization = "Bearer " + state.token;
+    }
+    if (opts.body && !(opts.body instanceof FormData) && !headers["Content-Type"]) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    const fetchOpts = {
+      credentials: "same-origin",
+      ...opts,
+      headers,
+      body: opts.body instanceof FormData || typeof opts.body === "string"
+        ? opts.body
+        : opts.body ? JSON.stringify(opts.body) : undefined
+    };
+
+    const res = await fetch(path, fetchOpts);
+    const text = await res.text();
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { detail: text };
+    }
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        const keepLogin = localStorage.getItem(STORAGE_KEYS.saveLogin) === "true";
+        if (allowSessionRetry && keepLogin && await restorePersistentSession()) {
+          return api(path, opts, false);
+        }
+        clearAuthState();
+        switchRoute("login");
+      }
+      const errText = parseApiError(data, res.statusText);
+      throw new Error(errText);
+    }
+    return data;
+  }
+
+  // 路由管理
+  function getRoute() {
+    const hash = (location.hash || "").replace(/^#\/?/, "").split("?")[0].trim();
+    if (!hash) return state.token ? "home" : "login";
+    return hash;
+  }
+
+  function switchRoute(name) {
+    location.hash = "#/" + name;
+  }
+
+  // 刷新全局数据
+  async function refreshAllData(force = false) {
+    if (!state.token) return;
+    // /api/home already contains user and student state. Avoid duplicate /me
+    // and /student requests so the initial screen can render immediately.
+    const [home, notes] = await Promise.all([
+      api(`/api/home?cached=${force ? 0 : 1}`).catch(() => ({})),
+      api("/api/notifications").catch(() => [])
+    ]);
+    if (home && home.user) {
+      state.user = home.user;
+      state.student = home.student || {};
+      state.home = home;
+    }
+    state.notes = Array.isArray(notes) ? notes : (notes.items || []);
+  }
+
+  // 页面渲染分发
+  async function renderPage() {
+    const current = getRoute();
+
+    // 未登录拦截
+    if (!state.token) {
+      if (current !== "register" && current !== "login") {
+        switchRoute("login");
+        return;
+      }
+      showAuthView(current === "register");
+      return;
+    }
+
+    // 已登录如果是 login/register 则跳转 home
+    if (current === "login" || current === "register") {
+      switchRoute("home");
+      return;
+    }
+
+    showAppView();
+    updateTabHighlight(current);
+
+    const container = $("view-container");
+    if (!container) return;
+
+    // 根据路由加载对应页面
+    try {
+      if (current === "features") {
+        container.innerHTML = renderFeaturesView();
+      } else if (current === "profile") {
+        container.innerHTML = renderProfileView();
+      } else if (current === "signin") {
+        container.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><div>课表加载中...</div></div>`;
+        container.innerHTML = await renderSigninView();
+      } else if (current === "td") {
+        container.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><div>锻炼状态查询中...</div></div>`;
+        container.innerHTML = await renderTdView();
+      } else if (current === "spark") {
+        container.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><div>火花配置加载中...</div></div>`;
+        container.innerHTML = await renderSparkView();
+        const dy = state.douyinSession?.douyin || state.douyinSession || {};
+        if ((state.douyinSession?.valid || dy.connected) && !state.douyinFriendsLoaded && !state.douyinFriendsLoading) {
+          setTimeout(() => loadDouyinFriendList(), 0);
+        }
+      } else if (current === "tibo") {
+        container.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><div>Tibo 历史缓存加载中...</div></div>`;
+        container.innerHTML = await renderTiboView();
+      } else {
+        // 默认 home
+        container.innerHTML = renderHomeView();
+      }
+    } catch (err) {
+      container.innerHTML = `
+        <div class="card center" style="padding: 30px 16px;">
+          <div style="font-size: 36px; margin-bottom: 10px;">⚠️</div>
+          <h3>页面加载失败</h3>
+          <p class="muted" style="margin: 8px 0 16px;">${esc(err.message)}</p>
+          <button type="button" class="btn soft" data-action="refresh-view">重新加载</button>
+        </div>`;
+    }
+  }
+
+  // 更新底部 Tab 高亮
+  function updateTabHighlight(route) {
+    const tabs = ["home", "features", "profile"];
+    tabs.forEach(t => {
+      const el = $("tab-" + t);
+      if (el) el.classList.toggle("active", t === route || (t === "features" && ["signin", "td", "spark", "tibo"].includes(route)));
+    });
+  }
+
+  function loadAuthPreferences() {
+    const username = localStorage.getItem(STORAGE_KEYS.username) || "";
+    localStorage.removeItem(STORAGE_KEYS.legacyCredential);
+    localStorage.removeItem(STORAGE_KEYS.legacyRemember);
+    const savedLoginPreference = localStorage.getItem(STORAGE_KEYS.saveLogin);
+    const saveLogin = savedLoginPreference === null ? true : savedLoginPreference === "true";
+    const userInput = $("auth-user");
+    const passInput = $("auth-pass");
+    const saveInput = $("auth-save-login");
+    if (userInput && username) userInput.value = username;
+    if (saveInput) saveInput.checked = saveLogin;
+  }
+
+  function persistAuthPreferences(username, _password, _rememberPassword, saveLogin) {
+    if (username) localStorage.setItem(STORAGE_KEYS.username, username);
+    localStorage.removeItem(STORAGE_KEYS.legacyCredential);
+    localStorage.removeItem(STORAGE_KEYS.legacyRemember);
+    localStorage.setItem(STORAGE_KEYS.saveLogin, String(saveLogin));
+  }
+
+
+  function persistAuthToken(token, saveLogin) {
+    localStorage.removeItem(STORAGE_KEYS.token);
+    sessionStorage.removeItem(STORAGE_KEYS.token);
+    if (saveLogin) {
+      localStorage.setItem(STORAGE_KEYS.token, token);
+    } else {
+      sessionStorage.setItem(STORAGE_KEYS.token, token);
+    }
+  }
+
+  let transportKeyCache = null;
+
+  function bytesToBigInt(bytes) {
+    let value = 0n;
+    for (const byte of bytes) value = (value << 8n) | BigInt(byte);
+    return value;
+  }
+
+  function bigIntToBytes(value, length) {
+    const out = new Uint8Array(length);
+    for (let i = length - 1; i >= 0; i--) { out[i] = Number(value & 255n); value >>= 8n; }
+    return out;
+  }
+
+  function modPow(base, exponent, modulus) {
+    let result = 1n;
+    base %= modulus;
+    while (exponent > 0n) {
+      if (exponent & 1n) result = (result * base) % modulus;
+      exponent >>= 1n;
+      base = (base * base) % modulus;
+    }
+    return result;
+  }
+
+  function bytesToBase64(bytes) {
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(binary);
+  }
+
+  async function getTransportKey() {
+    if (transportKeyCache) return transportKeyCache;
+    const response = await fetch("/api/security/public-key", {cache: "no-store"});
+    if (!response.ok) throw new Error("无法获取安全传输密钥");
+    transportKeyCache = await response.json();
+    return transportKeyCache;
+  }
+
+  async function encryptCredential(value) {
+    const key = await getTransportKey();
+    const message = new TextEncoder().encode(String(value ?? ""));
+    const size = Number(key.key_size);
+    if (message.length > size - 11) throw new Error("加密字段过长");
+    const encoded = new Uint8Array(size);
+    encoded[0] = 0; encoded[1] = 2;
+    const paddingLength = size - message.length - 3;
+    const random = new Uint8Array(paddingLength);
+    crypto.getRandomValues(random);
+    for (let i = 0; i < random.length; i++) {
+      while (random[i] === 0) crypto.getRandomValues(random.subarray(i, i + 1));
+      encoded[i + 2] = random[i];
+    }
+    encoded[2 + paddingLength] = 0;
+    encoded.set(message, 3 + paddingLength);
+    const modulus = BigInt("0x" + key.modulus_hex);
+    const exponent = BigInt(key.exponent);
+    return bytesToBase64(bigIntToBytes(modPow(bytesToBigInt(encoded), exponent, modulus), size));
+  }
+
+  async function encryptedFields(fields) {
+    const entries = await Promise.all(Object.entries(fields).map(async ([name, value]) => [name, await encryptCredential(value)]));
+    return Object.fromEntries(entries);
+  }
+
+  async function restorePersistentSession() {
+    try {
+      const headers = { "Accept": "application/json" };
+      // A valid local persistent token can recreate the HttpOnly cookie if the
+      // browser discarded only its cookie storage.
+      if (state.token) headers.Authorization = "Bearer " + state.token;
+      const res = await fetch("/api/auth/session", {
+        method: "GET",
+        credentials: "same-origin",
+        headers
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (!data.token) return false;
+      state.token = data.token;
+      persistAuthToken(data.token, true);
+      localStorage.setItem(STORAGE_KEYS.saveLogin, "true");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function clearAuthState() {
+    localStorage.removeItem(STORAGE_KEYS.token);
+    sessionStorage.removeItem(STORAGE_KEYS.token);
+    state.token = "";
+    state.user = null;
+    if (state.liveSocket) {
+      state.liveSocket.onclose = null;
+      state.liveSocket.close();
+      state.liveSocket = null;
+    }
+    clearTimeout(state.liveReconnectTimer);
+  }
+
+  // 显示登录/注册面板
+  function showAuthView(isRegister) {
+    $("auth-screen").classList.remove("hidden");
+    $("app-screen").classList.add("hidden");
+    $("auth-title").textContent = isRegister ? "注册账号" : "账号登录";
+    $("auth-submit").textContent = isRegister ? "注 册" : "登 录";
+    $("auth-nick-wrap").classList.toggle("hidden", !isRegister);
+    $("auth-invite-wrap").classList.toggle("hidden", !isRegister);
+    $("auth-options").classList.toggle("hidden", isRegister);
+    $("auth-save-hint").classList.toggle("hidden", isRegister);
+    $("auth-switch-link").textContent = isRegister ? "已有账号？去登录" : "没有账号？去注册";
+    $("auth-switch-link").href = isRegister ? "#/login" : "#/register";
+    $("auth-switch-link").dataset.nav = isRegister ? "login" : "register";
+    if (!isRegister) loadAuthPreferences();
+  }
+
+  // 显示主应用面板
+  function showAppView() {
+    $("auth-screen").classList.add("hidden");
+    $("app-screen").classList.remove("hidden");
+  }
+
+  /* ================== 页面模板 ================== */
+
+  function renderPageHeader(title, actionHtml = "") {
+    const displayName = state.user?.display_name || state.user?.username || "同学";
+    return `
+      <div class="topbar">
+        <div class="brand">
+          <div class="logo">盐</div>
+          <div>
+            <h2>${esc(title)}</h2>
+            <p class="muted-sm">你好，${esc(displayName)}</p>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          ${actionHtml}
+        </div>
+      </div>`;
+  }
+
+  function renderPageBackHeader(title, rightActionHtml = "") {
+    return `
+      <div class="topbar">
         <div class="row">
-          <div class="icon" style="background:${color}1a;color:${color}">●</div>
-          <div style="flex:1"><h3>${title} <span class="badge gray">${tag}</span></h3><p class="muted">${sub}</p></div>
-          ${badge(st || "none")}
+          <button type="button" class="btn ghost sm" data-nav="features">← 返回</button>
+          <h2>${esc(title)}</h2>
         </div>
-        <div class="row" style="margin-top:12px">
-          <button class="btn" data-go="${id}">打开</button>
-          <button class="btn ghost" data-request="${feature}">申请审批</button>
+        <div class="topbar-actions">
+          ${rightActionHtml || `<button type="button" class="btn ghost sm" data-action="refresh-view">刷新</button>`}
         </div>
-      </div>`).join("")}`;
-}
-
-function profileView() {
-  const u = state.user || {}, notes = state.notes || [];
-  return `${top("个人中心", `<button class="btn ghost" id="logout-btn">退出</button>`)}
-    <div class="card"><h3>${esc(u.display_name || u.username || "")}</h3><p class="muted">@${esc(u.username || "")}</p></div>
-    <div class="card">
-      <h3>学生认证</h3>
-      <label>学号</label><input id="sid" value="${esc((u.student && u.student.student_id) || "")}" />
-      <label>统一认证密码</label><input id="spw" type="password" />
-      <button class="btn wide" id="bind-btn" style="margin-top:12px">保存认证</button>
-    </div>
-    <div class="card"><h3>通知</h3>${notes.length ? notes.map(n => `<div class="list-item"><b>${esc(n.title || "通知")}</b><p class="muted">${esc(n.content || n.message || "")}</p></div>`).join("") : `<div class="empty">暂无通知</div>`}</div>`;
-}
-
-async function signinView() {
-  let schedule = {};
-  try { schedule = await api("/api/signin/schedule?cached=0"); }
-  catch (err) { schedule = { message: err.message, schedule: [] }; }
-  const courses = schedule.schedule || [];
-  return `${back("自动签到")}
-    <div class="card">
-      <div class="row"><div style="flex:1"><h3>定时自动签到</h3><p class="muted">${esc(schedule.message || "开启后按课表自动签到")}</p></div>
-      <button class="btn" id="toggle-signin">${schedule.enabled ? "关闭" : "开启"}</button></div>
-    </div>
-    <div class="card"><h3>今日课表</h3>${courses.length ? courses.map(c => `<div class="list-item"><div class="row"><div style="flex:1"><b>${esc(c.course_name)}</b><p class="muted">${esc(c.start_time || "")}-${esc(c.end_time || "")} ${esc(c.classroom || "")}</p></div>${badge(c.status)}</div></div>`).join("") : `<div class="empty">暂无课表</div>`}</div>`;
-}
-
-async function tdView() {
-  let td = {}, sun = {};
-  try { td = await api("/api/td/status"); } catch (err) { td = { message: err.message }; }
-  try { sun = await api("/api/sunshine/status"); } catch (err) { sun = { message: err.message }; }
-  return `${back("TD / 阳光")}
-    <div class="grid">
-      <div class="card"><p class="muted">TD</p><h2>${td.semester_count ?? "-"} / ${td.target_count ?? 32}</h2><p class="muted">${esc(td.message || td.status || "")}</p></div>
-      <div class="card"><p class="muted">阳光</p><h2>${sun.count ?? "-"} / ${sun.target_count ?? 16}</h2><p class="muted">${esc(sun.message || "")}</p></div>
-    </div>
-    <div class="card">
-      <h3>上传打卡照片</h3>
-      <label>入口图</label><input id="td-in" type="file" accept="image/*" />
-      <label>出口图</label><input id="td-out" type="file" accept="image/*" />
-      <button class="btn wide" id="td-upload" style="margin-top:12px">保存照片</button>
-      <p class="muted" style="margin-top:8px">手动 TD 需校园网由手机 App 直连，网页端可查询次数并保存照片。</p>
-    </div>`;
-}
-
-async function sparkView() {
-  let sess = {};
-  try { sess = await api("/api/douyin/session"); } catch (err) { sess = { message: err.message }; }
-  const dy = sess.douyin || sess;
-  const connected = !!(sess.valid || dy.connected);
-  const targets = dy.targets || sess.targets || [];
-  const targetText = targets.map(t => t.name + (t.message ? "|" + t.message : "")).join("\n");
-  return `${back("抖音续火花")}
-    <div class="card">
-      <h3>${connected ? "已绑定：" + esc(sess.nickname || dy.username || "抖音用户") : "未登录抖音"}</h3>
-      <p class="muted">${esc(sess.message || "使用抖音 App 扫码登录，或导入 Cookie")}</p>
-      <div class="row" style="margin-top:12px">
-        <button class="btn" id="qr-start">扫码登录</button>
-        <button class="btn ghost" id="cookie-import">导入 Cookie</button>
-      </div>
-      <div id="qr-box" class="center hidden">
-        <img id="qr-img" class="qr" alt="二维码" />
-        <p id="qr-hint" class="muted">正在生成二维码…</p>
-      </div>
-    </div>
-    <div class="card">
-      <h3>自动化任务</h3>
-      <label>统一留言</label><input id="spark-msg" value="${esc(dy.default_message || sess.default_message || "续火花")}" />
-      <label>执行小时 (0-23)</label><input id="spark-hour" type="number" min="0" max="23" value="${esc(dy.hour ?? sess.hour ?? 9)}" />
-      <label>对象，每行 昵称|留言</label>
-      <textarea id="spark-targets">${esc(targetText)}</textarea>
-      <div class="row" style="margin-top:12px">
-        <button class="btn" id="spark-on">开启并保存</button>
-        <button class="btn ghost" id="spark-off">保存并关闭</button>
-      </div>
-      <button class="btn soft wide" id="spark-run" style="margin-top:10px">立即续火花</button>
-    </div>`;
-}
-
-async function render() {
-  const name = route();
-  state.route = name;
-  if (!state.token && name !== "register") { showAuth(false); return; }
-  if (!state.token && name === "register") { showAuth(true); return; }
-  showApp();
-  const tabs = ["home", "features", "profile"];
-  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.toggle("active", b.dataset.route === name));
-  $("tabbar").classList.toggle("hidden", !tabs.includes(name));
-  const view = $("view");
-  view.classList.add("busy");
-  try {
-    if (name === "features") view.innerHTML = featuresView();
-    else if (name === "profile") view.innerHTML = profileView();
-    else if (name === "signin") view.innerHTML = await signinView();
-    else if (name === "td") view.innerHTML = await tdView();
-    else if (name === "spark") view.innerHTML = await sparkView();
-    else view.innerHTML = homeView();
-    bindView(name);
-  } finally {
-    view.classList.remove("busy");
+      </div>`;
   }
-}
 
-function bindView(name) {
-  $("view").onclick = async (e) => {
-    const goBtn = e.target.closest("[data-go]");
-    if (goBtn) { go(goBtn.dataset.go); return; }
-    const req = e.target.closest("[data-request]");
-    if (req) {
-      try { await api("/api/student/request", { method: "POST", body: { feature: req.dataset.request } }); toast("已提交审批"); await refreshAll(); render(); }
-      catch (err) { toast(err.message); }
+  // 1. 首页视图
+  function renderHomeView() {
+    const s = state.student || {};
+    const h = state.home || {};
+    const td = h.td || {};
+    const sun = h.sunshine || {};
+    const courses = (h.schedule && (h.schedule.schedule || h.schedule.courses)) || [];
+
+    return `
+      ${renderPageHeader("盐的工具箱", renderBadge(s.status || "unbound"))}
+
+      <!-- 今日锻炼大卡片 -->
+      <div class="hero">
+        <p class="muted" style="color: rgba(255,255,255,0.85); font-size: 12px; font-weight: 600;">TODAY OVERVIEW</p>
+        <h2 style="margin: 4px 0 2px; color: #fff;">校园工具一站通</h2>
+        <p class="muted" style="color: rgba(255,255,255,0.8);">自动签到、锻炼打卡与火花自动化</p>
+        <div class="hero-stat-grid">
+          <div class="hero-stat" data-nav="td" style="cursor:pointer;">
+            <div class="label">TD 课外锻炼</div>
+            <div class="val">${td.semester_count ?? "-"} <span style="font-size:14px;font-weight:normal;opacity:0.8;">/ ${td.target_count ?? 32} 次</span></div>
+          </div>
+          <div class="hero-stat" data-nav="td" style="cursor:pointer;">
+            <div class="label">阳光体育</div>
+            <div class="val">${sun.count ?? "-"} <span style="font-size:14px;font-weight:normal;opacity:0.8;">/ ${sun.target_count ?? 16} 次</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 快捷功能入口 -->
+      <div class="section-title">快捷入口</div>
+      <div class="grid">
+        <div class="card click" data-nav="signin">
+          <div class="row">
+            <div class="icon-box" style="background: var(--primary-soft); color: var(--primary);">📝</div>
+            <div style="flex:1;">
+              <h3>自动签到</h3>
+              <p class="muted-sm">${state.user?.student?.auto_signin ? "已开启后台签到" : "未开启签到"}</p>
+            </div>
+          </div>
+        </div>
+        <div class="card click" data-nav="spark">
+          <div class="row">
+            <div class="icon-box" style="background: var(--spark-soft); color: var(--spark);">🔥</div>
+            <div style="flex:1;">
+              <h3>抖音续火花</h3>
+              <p class="muted-sm">${state.user?.douyin?.connected ? "已绑定抖音" : "未登录抖音"}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 今日课表概览 -->
+      <div class="section-title">今日课程签到</div>
+      <div class="card">
+        ${courses.length ? courses.map(c => `
+          <div class="list-item">
+            <div class="row-between">
+              <div style="flex: 1; padding-right: 10px;">
+                <b>${esc(c.course_name || c.courseName || "课程")}</b>
+                <div class="muted-sm" style="margin-top: 2px;">
+                  📍 ${esc(c.classroom || "未知教室")} &nbsp;|&nbsp; ⏰ ${esc(c.start_time || "--:--")} ~ ${esc(c.end_time || "--:--")}
+                </div>
+              </div>
+              ${renderBadge(c.status || "pending")}
+            </div>
+          </div>
+        `).join("") : `
+          <div class="empty-state">
+            <div class="empty-icon">📅</div>
+            <p class="muted-sm">今日无课程，或尚未同步统一认证课表</p>
+            <button type="button" class="btn soft sm" data-nav="signin" style="margin-top: 10px;">进入签到页同步</button>
+          </div>
+        `}
+      </div>`;
+  }
+
+  // 2. 功能中心视图
+  function renderFeaturesView() {
+    const isBound = !!state.student?.student_id;
+
+    const features = [
+      {
+        id: "signin",
+        title: "自动签到",
+        desc: "北航课表每日自动同步，上课自动签到与状态监控",
+        tag: "常用",
+        color: "#1e60d5",
+        icon: "📝",
+        status: "available"
+      },
+      {
+        id: "td",
+        title: "TD / 阳光体育",
+        desc: "锻炼次数查询，支持 Android 或电脑 WebUI 在校园网本机发起 TD",
+        tag: "体育",
+        color: "#0288d1",
+        icon: "🏃",
+        status: "available"
+      },
+      {
+        id: "spark",
+        title: "抖音续火花",
+        desc: "通过浏览器 Cookie 绑定抖音账号，定时自动发消息续火花",
+        tag: "社交",
+        color: "#e65100",
+        icon: "🔥",
+        status: "available"
+      },
+      {
+        id: "tibo",
+        title: "Tibo Reset 监测",
+        desc: "查看 reset 历史推特，并可单独开启或关闭系统推送",
+        tag: "监测",
+        color: "#111827",
+        icon: "📡",
+        status: "available",
+        publicFeature: true
+      }
+    ];
+    if (state.user?.can_manage_invites) {
+      features.push({
+        id: "invite",
+        title: "获取邀请码",
+        desc: "领取一个未使用的一次性注册邀请码",
+        tag: "管理",
+        color: "#7b1fa2",
+        icon: "🎟️",
+        status: "available",
+        action: "issue-invite"
+      });
+    }
+
+    return `
+      ${renderPageHeader("功能管理")}
+
+      ${!isBound ? `
+        <div class="card" style="background: var(--warn-bg); border-color: #fde68a;">
+          <div class="row">
+            <div style="font-size: 20px;">💡</div>
+            <div style="flex: 1;">
+              <b>提示：尚未绑定统一认证学号</b>
+              <p class="muted-sm">自动签到和 TD 需要先绑定学号；抖音续火花与 Tibo 监测可直接使用。</p>
+            </div>
+            <button type="button" class="btn soft sm" data-action="open-bind-dialog">去绑定</button>
+          </div>
+        </div>
+      ` : ""}
+
+      ${features.map(f => {
+        return `
+          <div class="card">
+            <div class="row-between">
+              <div class="row" style="flex: 1;">
+                <div class="icon-box" style="background: ${f.color}18; color: ${f.color};">${f.icon}</div>
+                <div style="flex: 1;">
+                  <div class="row" style="gap: 6px;">
+                    <h3>${esc(f.title)}</h3>
+                    <span class="badge gray">${esc(f.tag)}</span>
+                  </div>
+                  <p class="muted-sm" style="margin-top: 2px;">${esc(f.desc)}</p>
+                </div>
+              </div>
+              ${renderBadge("available")}
+            </div>
+            <div class="row" style="margin-top: 14px; justify-content: flex-end; gap: 8px;">
+
+              <button type="button" class="btn sm" ${f.action ? `data-action="${f.action}"` : `data-nav="${f.id}"`}>
+                打开功能
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    `;
+  }
+
+  // Tibo Reset 历史缓存
+  async function renderTiboView() {
+    const data = await api("/api/tibo/history");
+    state.tiboHistory = data;
+    const items = Array.isArray(data.items) ? data.items : [];
+    return `
+      ${renderPageBackHeader("Tibo Reset 监测")}
+      <div class="card">
+        <div class="row-between" style="align-items: flex-start;">
+          <div style="flex: 1; padding-right: 12px;">
+            <h3>Tibo 系统推送</h3>
+            <p class="muted-sm" style="margin-top: 4px;">${data.enabled ? "已开启：发现新的 reset 相关推特时会发送系统通知。" : "已关闭：仍可查看历史缓存，但不会收到 Tibo 系统通知。"}</p>
+          </div>
+          <button type="button" class="btn ${data.enabled ? "danger" : ""}" data-action="toggle-tibo" data-enable="${!data.enabled}">
+            ${data.enabled ? "关闭推送" : "开启推送"}
+          </button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row-between">
+          <div>
+            <h3>历史推特缓存</h3>
+            <p class="muted-sm">后端每两小时检查一次，只展示包含 reset 的推特，最多保留 100 条。查看历史不受推送开关影响。</p>
+          </div>
+          <span class="badge ok">${items.length} 条</span>
+        </div>
+        <p class="muted-sm" style="margin-top: 10px;">最近检查：${esc(data.last_checked || "尚未检查")}</p>
+      </div>
+      ${items.length ? items.map(item => `
+        <a class="card" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer" style="display:block;color:inherit;text-decoration:none;">
+          <div class="row-between" style="gap:12px;align-items:flex-start;">
+            <div style="font-weight:700;">@thsottiaux</div>
+            <span class="muted-sm">${esc(String(item.created_at || "").replace("T", " ").split("+")[0])}</span>
+          </div>
+          <p style="margin-top:10px;line-height:1.65;white-space:pre-wrap;">${esc(item.text || "")}</p>
+          <div class="muted-sm" style="margin-top:10px;color:var(--primary);">点击查看原推特 →</div>
+        </a>`).join("") : `
+        <div class="empty-state"><div class="empty-icon">📭</div><div>暂时没有与 reset 有关的历史推特缓存</div></div>`}
+    `;
+  }
+
+  // 3. 自动签到页面
+  async function renderSigninView() {
+    let scheduleData = {};
+    try {
+      scheduleData = await api("/api/signin/schedule?cached=0");
+      state.signinSchedule = scheduleData;
+    } catch (err) {
+      scheduleData = {
+        message: err.message,
+        schedule: state.signinSchedule?.schedule || [],
+        enabled: state.student?.auto_signin
+      };
+    }
+
+    const courses = scheduleData.schedule || [];
+    const student = state.student || {};
+    const isEnabled = Boolean(scheduleData.enabled ?? student.auto_signin);
+
+    return `
+      ${renderPageBackHeader("自动签到")}
+
+      <!-- 自动签到开关卡片 -->
+      <div class="card">
+        <div class="row-between">
+          <div>
+            <h3>后台定时自动签到</h3>
+            <p class="muted-sm">${esc(scheduleData.message || (isEnabled ? "已开启：将在每节课前定时为您自动打卡" : "已关闭：点击右侧按钮开启后台自动打卡"))}</p>
+          </div>
+          <button type="button" class="btn ${isEnabled ? "danger" : ""}" data-action="toggle-signin" data-enable="${!isEnabled}">
+            ${isEnabled ? "关闭签到" : "开启签到"}
+          </button>
+        </div>
+      </div>
+
+      <!-- 绑定状态与学号 -->
+      <div class="card">
+        <div class="row-between">
+          <div>
+            <h3>统一身份认证</h3>
+            <p class="muted-sm">${student.student_id ? `已绑定学号: ${esc(student.student_id)}` : "未绑定学号，无法获取课表"}</p>
+          </div>
+          <button type="button" class="btn ghost sm" data-action="open-bind-dialog">
+            ${student.student_id ? "修改密码/学号" : "立即绑定"}
+          </button>
+        </div>
+      </div>
+
+      <!-- 今日课表列表 -->
+      <div class="section-title">今日课程 (${courses.length} 节)</div>
+      <div class="card">
+        ${courses.length ? courses.map(c => `
+          <div class="list-item">
+            <div class="row-between">
+              <div style="flex: 1;">
+                <b>${esc(c.course_name)}</b>
+                <div class="muted-sm" style="margin-top: 2px;">
+                  📍 ${esc(c.classroom || "未知教室")} &nbsp;|&nbsp; ⏰ ${esc(c.start_time || "")} ~ ${esc(c.end_time || "")}
+                </div>
+                ${c.scheduled_time ? `<div class="muted-sm" style="color: var(--primary); margin-top: 2px;">⏰ 预定触发时间: ${esc(c.scheduled_time)}</div>` : ""}
+              </div>
+              ${renderBadge(c.status)}
+            </div>
+          </div>
+        `).join("") : `
+          <div class="empty-state">
+            <div class="empty-icon">📅</div>
+            <p class="muted-sm">今日无课程，或课表数据尚未同步</p>
+          </div>
+        `}
+      </div>
+    `;
+  }
+
+  // 4. TD / 阳光体育页面
+  const TD_BRIDGE_BASE = "http://127.0.0.1:18788";
+  const TD_BRIDGE_TOKEN_KEY = "muz_td_bridge_token";
+  const TD_MACHINES = {
+    xueyuanlu: {
+      entrance: [[2, "北航本部TD入口1"], [4, "北航本部TD入口2"], [3, "北航本部TD入口3"]],
+      exit: [[6, "北航本部TD出口1"], [5, "北航本部TD出口2"], [7, "北航本部TD出口3"]]
+    },
+    shahe: {
+      entrance: [[8, "北航沙河TD入口1"], [9, "北航沙河TD入口2"], [10, "北航沙河TD入口3"]],
+      exit: [[11, "北航沙河TD出口1"], [12, "北航沙河TD出口2"], [13, "北航沙河TD出口3"]]
     }
   };
-  const backBtn = $("back-btn");
-  if (backBtn) backBtn.onclick = () => go("features");
-  const reloadBtn = $("reload-btn");
-  if (reloadBtn) reloadBtn.onclick = () => render();
-  const logoutBtn = $("logout-btn");
-  if (logoutBtn) logoutBtn.onclick = async () => {
-    try { await api("/api/auth/logout", { method: "POST", body: {} }); } catch {}
-    localStorage.removeItem("muz_token"); state.token = ""; go("login"); showAuth(false);
-  };
-  const bindBtn = $("bind-btn");
-  if (bindBtn) bindBtn.onclick = async () => {
-    try { await api("/api/student/bind", { method: "POST", body: { student_id: $("sid").value.trim(), password: $("spw").value } }); toast("认证信息已保存"); await refreshAll(); render(); }
-    catch (err) { toast(err.message); }
-  };
-  const toggle = $("toggle-signin");
-  if (toggle) toggle.onclick = async () => {
-    const enable = toggle.textContent === "开启";
-    try { await api("/api/signin/auto", { method: "POST", body: { enabled: enable } }); toast("已更新"); render(); }
-    catch (err) { toast(err.message); }
-  };
-  const upload = $("td-upload");
-  if (upload) upload.onclick = async () => {
-    const fd = new FormData();
-    const a = $("td-in").files[0], b = $("td-out").files[0];
-    if (a) fd.append("entrance", a);
-    if (b) fd.append("exit", b);
-    try { await api("/api/td/photos", { method: "POST", body: fd }); toast("照片已保存"); }
-    catch (err) { toast(err.message); }
-  };
-  const qrStart = $("qr-start");
-  if (qrStart) qrStart.onclick = startQr;
-  const cookieBtn = $("cookie-import");
-  if (cookieBtn) cookieBtn.onclick = importCookie;
-  const sparkOn = $("spark-on");
-  if (sparkOn) sparkOn.onclick = () => saveSpark(true);
-  const sparkOff = $("spark-off");
-  if (sparkOff) sparkOff.onclick = () => saveSpark(false);
-  const sparkRun = $("spark-run");
-  if (sparkRun) sparkRun.onclick = runSparkNow;
-}
 
-let qrTimer = null;
-async function startQr() {
-  $("qr-box").classList.remove("hidden");
-  $("qr-hint").textContent = "正在生成二维码…";
-  try {
-    const qr = await api("/api/douyin/qr/start", { method: "POST", body: {} });
-    paintQr(qr);
-    if (qrTimer) clearInterval(qrTimer);
-    qrTimer = setInterval(async () => {
+  function tdMachineOptions(campus, kind) {
+    const machines = TD_MACHINES[campus]?.[kind] || TD_MACHINES.xueyuanlu[kind];
+    return machines.map(([id, label]) => `<option value="${id}">${esc(label)}</option>`).join("");
+  }
+
+  function updateTdMachineOptions() {
+    const campus = $("td-campus")?.value || "xueyuanlu";
+    const entrance = $("td-entrance-machine");
+    const exit = $("td-exit-machine");
+    if (entrance) entrance.innerHTML = tdMachineOptions(campus, "entrance");
+    if (exit) exit.innerHTML = tdMachineOptions(campus, "exit");
+  }
+
+  function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error(`无法读取照片：${file?.name || "未知文件"}`));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function tdBridgeToken() {
+    const token = String($("td-bridge-token")?.value || "").trim();
+    if (!token) throw new Error("请填写本地桥接窗口中显示的桥接码");
+    sessionStorage.setItem(TD_BRIDGE_TOKEN_KEY, token);
+    return token;
+  }
+
+  async function requestTdBridgeDirect(path, method, payload, token) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), method === "GET" ? 8000 : 65000);
+    try {
+      const response = await fetch(TD_BRIDGE_BASE + path, {
+        method,
+        mode: "cors",
+        cache: "no-store",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "X-MuzTool-Bridge-Token": token
+        },
+        body: method === "GET" ? undefined : JSON.stringify(payload || {}),
+        signal: controller.signal
+      });
+      const text = await response.text();
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; }
+      catch { throw new Error("本地桥接返回了无法识别的数据"); }
+      if (!response.ok) {
+        const error = new Error(data.message || `本地桥接请求失败 (${response.status})`);
+        error.tdBridgeResponse = true;
+        throw error;
+      }
+      return data;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  function requestTdBridgeViaTampermonkey(path, method, payload, token) {
+    return new Promise((resolve, reject) => {
+      const requestId = `td-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const timer = setTimeout(() => {
+        state.tdBridgeWaiters.delete(requestId);
+        reject(new Error("无法连接本地桥接。请先运行桥接脚本；若浏览器拦截 localhost，再安装篡改猴助手"));
+      }, method === "GET" ? 10000 : 70000);
+      state.tdBridgeWaiters.set(requestId, { resolve, reject, timer });
+      window.postMessage({
+        source: "muztool-web",
+        type: "td-request",
+        requestId,
+        path,
+        method,
+        token,
+        payload: payload || {}
+      }, "*");
+    });
+  }
+
+  async function requestTdBridge(path, { method = "GET", payload = null, token } = {}) {
+    try {
+      return await requestTdBridgeDirect(path, method, payload, token);
+    } catch (directError) {
+      if (directError?.tdBridgeResponse) throw directError;
       try {
-        const st = await api("/api/douyin/qr/status?login_id=" + encodeURIComponent(qr.login_id));
-        paintQr(st);
-        if (["success","failed","expired","cancelled"].includes(st.status) || st.valid) {
-          clearInterval(qrTimer);
-          if (st.status === "success" || st.valid) { toast("抖音扫码登录成功"); render(); }
-        }
-      } catch (err) { $("qr-hint").textContent = err.message; }
-    }, 2000);
-  } catch (err) { $("qr-hint").textContent = err.message; }
-}
-function paintQr(qr) {
-  if (qr.qr_image) $("qr-img").src = "data:image/png;base64," + qr.qr_image;
-  $("qr-hint").textContent = qr.status === "scanned" ? "已扫码，请在抖音 App 中确认" : (qr.error || (qr.qr_image ? "请打开抖音 App，使用扫一扫登录" : "正在生成二维码…"));
-}
-async function importCookie() {
-  const cookies = prompt("粘贴 Cookie JSON 或 name=value; 格式");
-  if (!cookies) return;
-  try { await api("/api/douyin/session", { method: "POST", body: { cookies } }); toast("已导入"); render(); }
-  catch (err) { toast(err.message); }
-}
-async function saveSpark(enabled) {
-  const targets = $("spark-targets").value.split("\n").map(line => line.trim()).filter(Boolean).map(line => {
-    const [name, message] = line.split("|");
-    return { name: name.trim(), message: (message || "").trim() };
-  });
-  try {
-    await api("/api/douyin/config", { method: "PUT", body: { enabled, default_message: $("spark-msg").value, hour: Number($("spark-hour").value || 9), targets } });
-    toast("配置已保存");
-  } catch (err) { toast(err.message); }
-}
-async function runSparkNow() {
-  try { const r = await api("/api/douyin/run", { method: "POST", body: {} }); toast(r.message || "已执行"); }
-  catch (err) { toast(err.message); }
-}
+        return await requestTdBridgeViaTampermonkey(path, method, payload, token);
+      } catch (helperError) {
+        const directMessage = directError?.name === "AbortError" ? "直接连接本地桥接超时" : String(directError?.message || "直接连接失败");
+        throw new Error(`${helperError.message}（${directMessage}）`);
+      }
+    }
+  }
 
-window.addEventListener("hashchange", () => {
-  if (!state.token && route() === "register") showAuth(true);
-  else if (!state.token) showAuth(false);
-  else render();
-});
-if (state.token) { if (!location.hash || location.hash === "#/login") location.hash = "#/home"; boot(); }
-else { showAuth(route() === "register"); }
+  async function renderTdView() {
+    let tdData = {}, sunData = {};
+    try {
+      [tdData, sunData] = await Promise.all([
+        api("/api/td/status").catch(e => ({ message: e.message, semester_count: 0, target_count: 32 })),
+        api("/api/sunshine/status").catch(e => ({ message: e.message, count: 0, target_count: 16 }))
+      ]);
+      state.tdStatus = tdData;
+      state.sunshineStatus = sunData;
+    } catch (e) {
+      tdData = { message: e.message };
+    }
+
+    const studentId = state.student?.student_id || "";
+    const savedBridgeToken = sessionStorage.getItem(TD_BRIDGE_TOKEN_KEY) || "";
+
+    return `
+      ${renderPageBackHeader("TD / 阳光体育")}
+
+      <!-- 锻炼统计 -->
+      <div class="grid">
+        <div class="card">
+          <span class="badge" style="background: var(--td-soft); color: var(--td);">TD 锻炼</span>
+          <h2 style="font-size: 26px; margin: 8px 0 2px;">${tdData.semester_count ?? "-"} <span style="font-size: 14px; font-weight: normal; color: var(--muted);">/ ${tdData.target_count ?? 32}</span></h2>
+          <p class="muted-sm">${esc(tdData.message || (tdData.latest ? `最近打卡: ${tdData.latest.date || ""}` : "本学期打卡进度"))}</p>
+        </div>
+        <div class="card">
+          <span class="badge" style="background: var(--primary-soft); color: var(--primary);">阳光体育</span>
+          <h2 style="font-size: 26px; margin: 8px 0 2px;">${sunData.count ?? "-"} <span style="font-size: 14px; font-weight: normal; color: var(--muted);">/ ${sunData.target_count ?? 16}</span></h2>
+          <p class="muted-sm">${esc(sunData.message || "学期目标达标状态")}</p>
+        </div>
+      </div>
+
+      <!-- 选择打卡机照片 -->
+      <div class="card">
+        <h3>打卡机照片</h3>
+        <p class="muted-sm" style="margin-bottom: 14px; line-height: 1.5;">电脑本机打卡必须同时选择入口与出口照片。点击“上传并保存”才会另行存档到 MuzTool；直接打卡时照片只发送给本机桥接和校内 TD 服务器。</p>
+
+        <div class="input-group">
+          <label for="td-in">入口打卡机照片</label>
+          <input type="file" id="td-in" accept="image/*" />
+        </div>
+
+        <div class="input-group">
+          <label for="td-out">出口打卡机照片</label>
+          <input type="file" id="td-out" accept="image/*" />
+        </div>
+
+        <button type="button" class="btn ghost wide" id="btn-upload-photos" data-action="upload-td-photos" style="margin-top: 8px;">
+          仅上传并保存照片
+        </button>
+      </div>
+
+      <!-- 电脑本机 TD -->
+      <div class="card" style="border: 1px solid rgba(2, 136, 209, .24);">
+        <div class="row-between" style="align-items: flex-start; margin-bottom: 12px;">
+          <div>
+            <h3>电脑本机发起 TD</h3>
+            <p class="muted-sm" style="margin-top: 4px; line-height: 1.5;">电脑需连接校园网，并保持本地桥接窗口运行。学号：${studentId ? esc(studentId) : "尚未绑定"}</p>
+          </div>
+          ${renderBadge(studentId ? "available" : "unbound")}
+        </div>
+
+        <div class="grid">
+          <div class="input-group">
+            <label for="td-campus">校区</label>
+            <select id="td-campus">
+              <option value="xueyuanlu">学院路</option>
+              <option value="shahe">沙河</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label for="td-gap-minutes">入口至出口时间差</label>
+            <input type="number" id="td-gap-minutes" min="1" max="15" value="4" inputmode="numeric" />
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="input-group">
+            <label for="td-entrance-machine">入口打卡机</label>
+            <select id="td-entrance-machine">${tdMachineOptions("xueyuanlu", "entrance")}</select>
+          </div>
+          <div class="input-group">
+            <label for="td-exit-machine">出口打卡机</label>
+            <select id="td-exit-machine">${tdMachineOptions("xueyuanlu", "exit")}</select>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="td-bridge-token">本地桥接码（仅保存在当前浏览器标签会话）</label>
+          <input type="password" id="td-bridge-token" value="${esc(savedBridgeToken)}" autocomplete="off" placeholder="从桥接脚本窗口复制" />
+        </div>
+
+        <div class="grid" style="margin-bottom: 10px;">
+          <button type="button" class="btn ghost" data-action="download-td-bridge">下载本地桥接</button>
+          <button type="button" class="btn ghost" data-action="install-td-helper">安装篡改猴助手（可选）</button>
+        </div>
+        <button type="button" class="btn soft wide" data-action="test-td-bridge" style="margin-bottom: 10px;">测试本地桥接</button>
+        <button type="button" class="btn wide" data-action="run-td-desktop" ${studentId ? "" : "disabled"}>
+          🖥️ 电脑本机发起 TD
+        </button>
+        ${!studentId ? `<p class="muted-sm" style="margin-top: 10px; color: var(--err);">请先绑定统一认证学号。</p>` : ""}
+      </div>
+
+      <!-- 打卡说明卡片 -->
+      <div class="card" style="background: var(--card-alt);">
+        <div class="row">
+          <div style="font-size: 24px;">💻</div>
+          <div style="flex: 1;">
+            <b>为什么电脑需要本地桥接？</b>
+            <p class="muted-sm" style="margin-top: 4px; line-height: 1.5;">
+              浏览器不能直接连接 TD 的原始 TCP 端口。本地桥接只监听 127.0.0.1，并代替网页从当前电脑连接校内打卡机；篡改猴助手仅用于处理部分浏览器的 localhost 访问限制。
+            </p>
+          </div>
+        </div>
+        <button type="button" class="btn ghost wide" data-action="show-td-guide" style="margin-top: 12px;">
+          查看电脑与手机打卡说明
+        </button>
+      </div>
+    `;
+  }
+
+  function normalizeSparkTarget(target) {
+    const message = String(target?.message || "").trim();
+    const mode = target?.mode === "custom" || (!target?.mode && message) ? "custom" : "standard";
+    const conversationType = ["direct", "group"].includes(target?.conversation_type) ? target.conversation_type : "";
+    return {
+      name: String(target?.name || "").trim(),
+      mode,
+      message: mode === "custom" ? message : "",
+      conversation_id: String(target?.conversation_id || "").trim(),
+      conversation_short_id: String(target?.conversation_short_id || "").trim(),
+      conversation_type: conversationType
+    };
+  }
+
+  function sparkConversationKey(item) {
+    const id = String(item?.conversation_id || "").trim();
+    if (id) return `id:${id}`;
+    return `${String(item?.conversation_type || "unknown")}:${String(item?.name || "").trim()}`;
+  }
+
+  function renderSparkTargetRows(targets = state.sparkTargets) {
+    if (!targets.length) {
+      return `<div class="empty-state" style="padding: 20px 10px;">先从上方读取到的好友列表中选择并添加</div>`;
+    }
+    return targets.map((target, index) => `
+      <div class="list-item spark-target-row" data-index="${index}">
+        <div style="flex: 1; min-width: 0;">
+          <div class="row-between" style="align-items: flex-start;">
+            <div>
+              <b>${esc(target.name)} ${target.conversation_type === "group" ? `<span class="badge approved" style="margin-left:6px;">群聊</span>` : ""}</b>
+              <p class="muted-sm" style="margin-top: 3px;">${target.mode === "custom" ? "自定义模式" : "标准模式：使用默认续火花文案"}</p>
+            </div>
+            <button type="button" class="btn ghost sm" data-action="remove-spark-target" data-index="${index}">移除</button>
+          </div>
+          <div class="row" style="margin-top: 10px; align-items: stretch; flex-wrap: wrap;">
+            <select class="spark-target-mode" data-index="${index}" style="flex: 0 0 130px;">
+              <option value="standard" ${target.mode === "standard" ? "selected" : ""}>标准模式</option>
+              <option value="custom" ${target.mode === "custom" ? "selected" : ""}>自定义模式</option>
+            </select>
+            <input class="spark-target-message" data-index="${index}" type="text" value="${esc(target.message)}"
+              placeholder="输入该好友专用文案" style="flex: 1; min-width: 190px;" ${target.mode === "custom" ? "" : "disabled"} />
+          </div>
+        </div>
+      </div>`).join("");
+  }
+
+  function filteredDouyinFriends() {
+    const liveQuery = $("spark-friend-search")?.value ?? state.douyinFriendQuery;
+    const query = String(liveQuery || "").trim().toLocaleLowerCase();
+    state.douyinFriendQuery = String(liveQuery || "");
+    if (!query) return state.douyinFriendResults;
+    return state.douyinFriendResults.filter(friend => String(friend.name || "").toLocaleLowerCase().includes(query));
+  }
+
+  function renderDouyinFriendResults(friends = filteredDouyinFriends()) {
+    if (state.douyinFriendsLoading && !state.douyinFriendsLoaded) {
+      return `<div class="empty-state" style="padding: 18px 10px;">正在读取好友缓存；若尚无缓存，将从抖音拉取一次...</div>`;
+    }
+    if (state.douyinFriendsError) {
+      return `<p class="muted-sm" style="padding: 10px 2px; color: var(--danger);">${esc(state.douyinFriendsError)}</p>`;
+    }
+    if (!state.douyinFriendsLoaded) {
+      return `<p class="muted-sm" style="padding: 10px 2px;">绑定 Cookie 后会自动读取抖音聊天好友列表。</p>`;
+    }
+    if (!friends.length) {
+      const hasQuery = Boolean(String(state.douyinFriendQuery || "").trim());
+      return `<p class="muted-sm" style="padding: 10px 2px;">${hasQuery ? "当前筛选没有匹配好友。" : "未读取到聊天好友，请确认抖音聊天页中已有会话。"}</p>`;
+    }
+    const selected = new Set(state.sparkTargets.map(sparkConversationKey));
+    const loadingBanner = state.douyinFriendsLoading
+      ? `<p class="muted-sm" style="padding: 8px 2px;">正在从抖音更新好友缓存，当前仍显示旧缓存...</p>`
+      : "";
+    return loadingBanner + friends.map(friend => {
+      const added = selected.has(sparkConversationKey(friend));
+      return `
+        <div class="list-item">
+          <div class="row" style="flex: 1; min-width: 0;">
+            ${friend.avatar_url ? `<img src="${esc(friend.avatar_url)}" alt="" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;" />` : `<div class="icon-box" style="width:36px;height:36px;border-radius:50%;">${friend.conversation_type === "group" ? "👥" : "👤"}</div>`}
+            <div style="min-width:0;">
+              <b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">${esc(friend.name)}</b>
+              <span class="muted-sm">${friend.conversation_type === "group" ? "群聊" : "好友"}</span>
+            </div>
+          </div>
+          <button type="button" class="btn ${added ? "ghost" : "soft"} sm" data-action="add-spark-friend"
+            data-name="${esc(friend.name)}" data-conversation-id="${esc(friend.conversation_id || "")}" data-conversation-short-id="${esc(friend.conversation_short_id || "")}" data-conversation-type="${esc(friend.conversation_type || "")}" ${added ? "disabled" : ""}>
+            ${added ? "已添加" : "添加"}
+          </button>
+        </div>`;
+    }).join("");
+
+  }
+
+
+  function refreshSparkFriendEditors() {
+    const targetBox = $("spark-target-list");
+    if (targetBox) targetBox.innerHTML = renderSparkTargetRows();
+    const resultBox = $("spark-friend-results");
+    if (resultBox) resultBox.innerHTML = renderDouyinFriendResults();
+    const countBox = $("spark-friend-count");
+    if (countBox) {
+      countBox.textContent = state.douyinFriendsLoaded
+        ? `已缓存 ${state.douyinFriendResults.length} 位聊天好友；仅点击“重新读取好友”时更新缓存。`
+        : "将优先读取好友缓存；尚无缓存时才会自动从抖音拉取一次。";
+    }
+  }
+
+  async function loadDouyinFriendList(button = null, forceRefresh = false) {
+    if (state.douyinFriendsLoading) return;
+    const hadLoadedCache = state.douyinFriendsLoaded;
+    state.douyinFriendsLoading = true;
+    state.douyinFriendsError = "";
+    refreshSparkFriendEditors();
+    if (button) {
+      button.disabled = true;
+      button.classList.add("loading");
+    }
+    try {
+      const path = forceRefresh ? "/api/douyin/friends?refresh=1" : "/api/douyin/friends";
+      const result = await api(path);
+      state.douyinFriendResults = Array.isArray(result.friends) ? result.friends : [];
+      state.douyinFriendsCachedAt = String(result.cached_at || "");
+      state.douyinFriendsLoaded = true;
+      if (button) toast(`好友缓存已更新，共 ${state.douyinFriendResults.length} 位`);
+    } catch (err) {
+      if (!hadLoadedCache) state.douyinFriendsLoaded = false;
+      state.douyinFriendsError = hadLoadedCache ? "" : (err.message || "读取好友列表失败");
+      if (button) toast(err.message || "刷新好友列表失败，已保留原缓存", "error");
+    } finally {
+      state.douyinFriendsLoading = false;
+      if (button) {
+        button.disabled = false;
+        button.classList.remove("loading");
+      }
+      refreshSparkFriendEditors();
+    }
+  }
+
+
+  // 5. 抖音续火花页面
+  async function renderSparkView() {
+    let session = {};
+    try {
+      session = await api("/api/douyin/session");
+      state.douyinSession = session;
+    } catch (err) {
+      session = { message: err.message, valid: false };
+    }
+
+    const dy = session.douyin || session;
+    const targets = dy.targets || session.targets || [];
+    const isConnected = !!(session.valid || dy.connected);
+    state.sparkTargets = targets.map(normalizeSparkTarget).filter(target => target.name);
+    if (!isConnected) {
+      state.douyinFriendResults = [];
+      state.douyinFriendsLoaded = false;
+      state.douyinFriendsError = "";
+      state.douyinFriendsCachedAt = "";
+      state.douyinFriendQuery = "";
+    }
+
+    return `
+      ${renderPageBackHeader("抖音续火花")}
+
+      <!-- 账号状态卡片 -->
+      <div class="card">
+        <div class="row-between">
+          <div class="row">
+            <div class="icon-box" style="background: var(--spark-soft); color: var(--spark);">🔥</div>
+            <div>
+              <h3>${isConnected ? "已绑定抖音：" + esc(session.nickname || dy.username || "抖音用户") : "尚未登录抖音"}</h3>
+              <p class="muted-sm">${esc(session.message || (isConnected ? "每日将自动向设定好友发送火花消息" : "请从已登录的抖音网页版导出 Cookie 完成绑定"))}</p>
+            </div>
+          </div>
+          ${renderBadge(isConnected ? "connected" : "unbound")}
+        </div>
+
+        <div class="row" style="margin-top: 14px; gap: 10px;">
+          <button type="button" class="btn" data-action="open-cookie-dialog" style="flex: 1;">
+            📋 导入抖音 Cookie
+          </button>
+          <button type="button" class="btn ghost" data-action="show-douyin-cookie-guide" style="flex: 1;">
+            ❓ 获取抖音 Cookie 教程
+          </button>
+        </div>
+        <p class="muted-sm" style="margin-top: 10px; line-height: 1.55;">
+          Cookie 只会保存到你的 MuzTool 账号中。请勿把 Cookie 发送给其他人。
+        </p>
+      </div>
+
+      <!-- 自动化参数配置 -->
+      <div class="card">
+        <h3>火花自动化参数</h3>
+
+        <div class="input-group" style="margin-top: 12px;">
+          <label for="spark-default-msg">默认续火花文案</label>
+          <input type="text" id="spark-default-msg" value="${esc(dy.default_message || "续火花")}" placeholder="例如：续火花 / 早上好" />
+        </div>
+
+        <div class="input-group">
+          <label for="spark-hour">每日自动发送时间（整点，0~23）</label>
+          <input type="number" id="spark-hour" min="0" max="23" value="${esc(dy.hour ?? 9)}" />
+        </div>
+
+        <div class="row-between" style="padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-bottom: 14px;">
+          <div>
+            <div style="font-weight: 650;">最近自动执行</div>
+            <div class="muted-sm" style="margin-top: 3px;">${dy.last_auto_run ? esc(String(dy.last_auto_run).replace("T", " ").split("+")[0].slice(0, 16)) : "尚无自动执行记录"}</div>
+          </div>
+          ${renderBadge(dy.last_auto_run ? "已执行" : "等待执行")}
+        </div>
+
+        <div class="input-group">
+          <div class="row-between" style="align-items: end; gap: 10px;">
+            <label for="spark-friend-search" style="margin-bottom: 0;">添加列表好友</label>
+            <button type="button" class="btn soft sm" data-action="refresh-douyin-friends">重新读取好友</button>
+          </div>
+          <input type="search" id="spark-friend-search" value="${esc(state.douyinFriendQuery)}" placeholder="在已读取的好友中搜索" style="margin-top: 8px;" />
+          <p id="spark-friend-count" class="muted-sm" style="margin-top: 5px;">
+            ${state.douyinFriendsLoaded ? `已缓存 ${state.douyinFriendResults.length} 位聊天好友；仅主动刷新时更新。` : "正在读取好友缓存；尚无缓存时会自动拉取一次。"}
+          </p>
+          <div id="spark-friend-results" style="margin-top: 8px; max-height: 360px; overflow-y: auto;">
+            ${renderDouyinFriendResults()}
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top: 18px;">续火花列表</div>
+        <div id="spark-target-list" class="card" style="padding: 4px 14px; margin-bottom: 0;">
+          ${renderSparkTargetRows()}
+        </div>
+        <p class="muted-sm" style="margin-top: 7px;">标准模式使用默认文案；自定义模式可为该好友单独设置消息。修改后请点击下方保存。</p>
+
+        <div class="row" style="gap: 10px; margin-top: 16px;">
+          <button type="button" class="btn" data-action="save-spark-config" data-enable="true" style="flex: 1;">
+            保存并启用
+          </button>
+          <button type="button" class="btn ghost" data-action="save-spark-config" data-enable="false" style="flex: 1;">
+            保存但暂停
+          </button>
+        </div>
+
+        <div style="margin-top: 12px;">
+          <button type="button" class="btn soft wide" data-action="run-spark-now">
+            ⚡ 立即执行一次发火花
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  // 6. 个人中心视图
+  function renderProfileView() {
+    const u = state.user || {};
+    const s = state.student || {};
+    const notes = state.notes || [];
+
+    return `
+      ${renderPageHeader("个人中心")}
+
+      <!-- 用户基本信息 -->
+      <div class="card">
+        <div class="row">
+          <div class="icon-box" style="background: var(--primary-soft); color: var(--primary); font-size: 22px;">👤</div>
+          <div style="flex: 1;">
+            <h3 style="font-size: 17px;">${esc(u.display_name || u.username || "同学")}</h3>
+            <p class="muted-sm">用户名: @${esc(u.username || "")}</p>
+          </div>
+          ${renderBadge(s.status || "unbound")}
+        </div>
+      </div>
+
+      <!-- 学生统一身份认证 -->
+      <div class="card">
+        <h3>统一身份认证绑定</h3>
+        <p class="muted-sm" style="margin-bottom: 12px;">学号与密码用于同步课表及查询体育打卡数据</p>
+
+        <div class="input-group">
+          <label for="profile-sid">学号</label>
+          <input type="text" id="profile-sid" value="${esc(s.student_id || "")}" placeholder="例如：21370000" />
+        </div>
+
+        <div class="input-group">
+          <label for="profile-spw">统一认证密码</label>
+          <input type="password" id="profile-spw" placeholder="${s.student_id ? "若不修改密码可留空" : "请输入统一认证密码"}" />
+        </div>
+
+        <button type="button" class="btn wide" data-action="save-student-bind" style="margin-top: 6px;">
+          保存认证信息
+        </button>
+      </div>
+
+      <!-- 系统通知 -->
+      <div class="section-title">系统通知 (${notes.length})</div>
+      <div class="card">
+        ${notes.length ? notes.map(n => `
+          <div class="list-item">
+            <b>${esc(n.title || "系统通知")}</b>
+            <p class="muted-sm" style="margin-top: 2px;">${esc(n.content || n.message || "")}</p>
+            ${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:6px;color:var(--primary);font-weight:600;text-decoration:none;">点击查看</a>` : ""}
+            ${n.created_at ? `<div class="muted-sm" style="font-size: 11px; margin-top: 4px; opacity: 0.7;">${esc(n.created_at)}</div>` : ""}
+          </div>
+        `).join("") : `
+          <div class="empty-state">
+            <div class="empty-icon">🔔</div>
+            <p class="muted-sm">暂无系统通知</p>
+          </div>
+        `}
+      </div>
+
+      <!-- 退出登录 -->
+      <div style="margin-top: 20px;">
+        <button type="button" class="btn danger wide" data-action="logout" style="height: 46px;">
+          🚪 退出当前账号
+        </button>
+      </div>
+    `;
+  }
+
+  /* ================== 弹窗/模态框系统 ================== */
+
+  function showModal(html) {
+    const container = $("modal-container");
+    if (!container) return;
+    container.innerHTML = `<div class="modal-box">${html}</div>`;
+    container.classList.add("show");
+  }
+
+  function closeModal() {
+    const container = $("modal-container");
+    if (!container) return;
+    container.classList.remove("show");
+    container.innerHTML = "";
+  }
+
+  function openBindModal() {
+    const student = state.student || {};
+    showModal(`
+      <h3 style="margin-bottom: 12px;">绑定北航统一身份认证</h3>
+      <p class="muted-sm" style="margin-bottom: 14px;">请输入统一认证账号与密码，用于同步课表并定时自动打卡。</p>
+
+      <div class="input-group">
+        <label for="modal-sid">学号</label>
+        <input type="text" id="modal-sid" value="${esc(student.student_id || "")}" placeholder="请输入学号" />
+      </div>
+
+      <div class="input-group">
+        <label for="modal-spw">统一认证密码</label>
+        <input type="password" id="modal-spw" placeholder="请输入密码" />
+      </div>
+
+      <div class="row" style="margin-top: 18px; gap: 10px;">
+        <button type="button" class="btn ghost" data-action="close-modal" style="flex: 1;">取消</button>
+        <button type="button" class="btn" data-action="submit-modal-bind" style="flex: 1;">保存绑定</button>
+      </div>
+    `);
+  }
+
+  function openCookieModal() {
+    showModal(`
+      <h3 style="margin-bottom: 12px;">导入抖音 Cookie</h3>
+      <p class="muted-sm" style="margin-bottom: 14px; line-height: 1.6;">
+        请粘贴 Cookie-Editor 从抖音网页版导出的完整 JSON 数组。
+        不建议只粘贴单个 sessionid，因为完整 Cookie 的兼容性和有效期更好。
+      </p>
+
+      <div class="input-group">
+        <label for="modal-cookies">Cookie JSON</label>
+        <textarea id="modal-cookies" style="min-height: 180px;" placeholder='粘贴以 [ 开头、以 ] 结尾的完整 Cookie JSON 数组'></textarea>
+      </div>
+
+      <button type="button" class="btn soft wide" data-action="show-douyin-cookie-guide" style="margin-top: 4px;">
+        ❓ 不知道如何获取？查看教程
+      </button>
+
+      <div class="row" style="margin-top: 18px; gap: 10px;">
+        <button type="button" class="btn ghost" data-action="close-modal" style="flex: 1;">取消</button>
+        <button type="button" class="btn" data-action="submit-modal-cookies" style="flex: 1;">确认绑定</button>
+      </div>
+    `);
+  }
+
+  function openDouyinCookieGuide() {
+    showModal(`
+      <h3 style="margin-bottom: 10px;">获取抖音 Cookie 教程</h3>
+      <div class="muted-sm" style="line-height: 1.75;">
+        <p><b>准备：</b>请在电脑上的 Chrome、Edge 或其他 Chromium 浏览器中操作。</p>
+        <ol style="padding-left: 20px; margin: 12px 0;">
+          <li>安装 <b>Cookie-Editor</b> 浏览器扩展。</li>
+          <li>打开 <a href="https://www.douyin.com/chat" target="_blank" rel="noopener noreferrer">抖音聊天网页版</a>，完成登录以及可能出现的安全验证。</li>
+          <li>确认聊天页面能够正常显示后，点击浏览器工具栏中的 Cookie-Editor 图标。</li>
+          <li>点击扩展底部的 <b>Export</b>，选择 <b>JSON</b>。</li>
+          <li>复制导出的完整 JSON 数组，返回 MuzTool，点击“导入抖音 Cookie”并粘贴。</li>
+        </ol>
+        <p style="color: var(--danger);"><b>安全提醒：</b>Cookie 等同于登录凭证，请勿截图、转发或提交到公开网站。若怀疑泄露，请立即在抖音退出其他设备或修改密码。</p>
+      </div>
+      <div class="row" style="margin-top: 16px; gap: 10px; flex-wrap: wrap;">
+        <a class="btn ghost" style="flex: 1; text-align: center;" href="https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm" target="_blank" rel="noopener noreferrer">安装 Cookie-Editor</a>
+        <button type="button" class="btn" data-action="open-cookie-dialog" style="flex: 1;">我已获取，去导入</button>
+      </div>
+    `);
+  }
+
+  /* ================== 事件处理与动作委托 ================== */
+
+  // 按钮 Loading 辅助
+  async function withButtonLoading(btn, asyncFn) {
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    btn.classList.add("loading");
+    try {
+      await asyncFn();
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove("loading");
+    }
+  }
+
+  // 抖音扫码登录轮询
+  async function startSparkQrLogin(btn) {
+    const qrBox = $("spark-qr-box");
+    const qrImg = $("spark-qr-img");
+    const qrStatus = $("spark-qr-status");
+    if (!qrBox || !qrImg || !qrStatus) return;
+
+    qrBox.classList.remove("hidden");
+    qrStatus.textContent = "正在生成登录二维码...";
+
+    try {
+      const res = await api("/api/douyin/qr/start", { method: "POST", body: {} });
+      state.qrSessionId = res.login_id;
+      if (res.qr_image) {
+        qrImg.src = "data:image/png;base64," + res.qr_image;
+      }
+      qrStatus.textContent = "请打开抖音 App 扫一扫登录";
+
+      if (state.qrTimer) clearInterval(state.qrTimer);
+      state.qrTimer = setInterval(async () => {
+        try {
+          if (!state.qrSessionId) return;
+          const st = await api("/api/douyin/qr/status?login_id=" + encodeURIComponent(state.qrSessionId));
+          if (st.qr_image) qrImg.src = "data:image/png;base64," + st.qr_image;
+          if (st.status === "scanned") {
+            qrStatus.textContent = st.error || "已扫码或确认登录，正在获取 Cookie，请稍候...";
+          } else if (st.status === "success" || st.valid) {
+            clearInterval(state.qrTimer);
+            state.qrTimer = null;
+            state.qrSessionId = null;
+            toast("抖音登录成功，Cookie 已保存！");
+            qrBox.classList.add("hidden");
+            await refreshAllData();
+            await renderPage();
+          } else if (["failed", "expired", "cancelled"].includes(st.status)) {
+            clearInterval(state.qrTimer);
+            state.qrTimer = null;
+            qrStatus.textContent = st.error || "二维码已失效，请重新扫码";
+          }
+        } catch (pollErr) {
+          qrStatus.textContent = pollErr.message;
+        }
+      }, 2000);
+    } catch (err) {
+      qrStatus.textContent = err.message;
+      toast(err.message, "error");
+    }
+  }
+
+  function cancelSparkQrLogin() {
+    if (state.qrTimer) {
+      clearInterval(state.qrTimer);
+      state.qrTimer = null;
+    }
+    const loginId = state.qrSessionId;
+    state.qrSessionId = null;
+    if (loginId) {
+      api("/api/douyin/qr/cancel", {
+        method: "POST",
+        body: { login_id: loginId }
+      }).catch(() => {});
+    }
+    const qrBox = $("spark-qr-box");
+    if (qrBox) qrBox.classList.add("hidden");
+  }
+
+  // 统一事件委托监听器
+  document.addEventListener("click", async (e) => {
+    // 1. 路由跳转 data-nav
+    const navBtn = e.target.closest("[data-nav]");
+    if (navBtn) {
+      e.preventDefault();
+      const route = navBtn.dataset.nav;
+      if (route) switchRoute(route);
+      return;
+    }
+
+    // 2. 密码可见性切换
+    const togglePass = e.target.closest("#btn-toggle-pass");
+    if (togglePass) {
+      const input = $("auth-pass");
+      if (input) {
+        const isPass = input.type === "password";
+        input.type = isPass ? "text" : "password";
+        togglePass.textContent = isPass ? "🔒" : "👁";
+      }
+      return;
+    }
+
+    // 3. 登录/注册主按钮
+    const authSubmit = e.target.closest("#auth-submit");
+    if (authSubmit) {
+      e.preventDefault();
+      await withButtonLoading(authSubmit, async () => {
+        const isReg = getRoute() === "register";
+        const username = $("auth-user").value.trim();
+        const password = $("auth-pass").value;
+        const displayName = $("auth-nick") ? $("auth-nick").value.trim() : "";
+        const inviteCode = $("auth-invite") ? $("auth-invite").value.trim() : "";
+
+        if (!username || !password) throw new Error("用户名和密码不能为空");
+        if (isReg && !inviteCode) throw new Error("请输入邀请码");
+
+        const rememberPassword = false;
+        const saveLogin = isReg || Boolean($("auth-save-login")?.checked);
+        const encrypted = await encryptedFields(isReg
+          ? {username, password, display_name: displayName || username, invite_code: inviteCode}
+          : {username, password});
+        const payload = { encrypted, keep_login: isReg ? true : saveLogin };
+
+        const res = await api(isReg ? "/api/auth/register" : "/api/auth/login", {
+          method: "POST",
+          body: payload
+        });
+
+        if (!res.token) throw new Error("服务器未返回有效登录凭证");
+        if (!isReg) {
+          persistAuthPreferences(username, password, rememberPassword, saveLogin);
+        } else {
+          persistAuthPreferences(username, "", false, true);
+        }
+        state.token = res.token;
+        persistAuthToken(res.token, isReg || saveLogin);
+        toast(isReg ? "注册成功，已自动登录" : "登录成功");
+        switchRoute("home");
+        await bootApp();
+      });
+      return;
+    }
+
+    // 4. Modal 关闭
+    const modalClose = e.target.closest("[data-action='close-modal']");
+    if (modalClose || e.target.id === "modal-container") {
+      closeModal();
+      return;
+    }
+
+    // 5. 各种具体业务动作
+    const actionBtn = e.target.closest("[data-action]");
+    if (!actionBtn) return;
+    const action = actionBtn.dataset.action;
+
+    // 刷新当前页面
+    if (action === "refresh-view") {
+      await withButtonLoading(actionBtn, async () => {
+        await refreshAllData(true);
+        await renderPage();
+        toast("已刷新");
+      });
+      return;
+    }
+
+    if (action === "issue-invite") {
+      await withButtonLoading(actionBtn, async () => {
+        const result = await api("/api/invites/issue", {method: "POST", body: {}});
+        showModal(`<h3>注册邀请码</h3><p class="muted-sm" style="margin:10px 0;">该邀请码只能使用一次，请通过可信渠道发送。</p><div class="card" style="font-size:20px;font-weight:700;letter-spacing:2px;text-align:center;user-select:all;">${esc(result.code)}</div><p class="muted-sm" style="margin-top:10px;">库存剩余 ${Number(result.remaining || 0)} 个</p><button class="btn wide" data-action="close-modal" style="margin-top:14px;">关闭</button>`);
+      });
+      return;
+    }
+
+    // 开关 Tibo 系统推送
+    if (action === "toggle-tibo") {
+      const enable = actionBtn.dataset.enable === "true";
+      await withButtonLoading(actionBtn, async () => {
+        const result = await api("/api/tibo/config", {
+          method: "PUT",
+          body: { enabled: enable }
+        });
+        if (state.tiboHistory) state.tiboHistory.enabled = Boolean(result.enabled);
+        if (state.user) state.user.tibo = { enabled: Boolean(result.enabled) };
+        toast(result.message || (result.enabled ? "Tibo 推送已开启" : "Tibo 推送已关闭"));
+        await renderPage();
+      });
+      return;
+    }
+
+
+    // 打开学号绑定弹窗
+    if (action === "open-bind-dialog") {
+      openBindModal();
+      return;
+    }
+
+    // 提交弹窗绑定学号
+    if (action === "submit-modal-bind") {
+      await withButtonLoading(actionBtn, async () => {
+        const studentId = $("modal-sid").value.trim();
+        const password = $("modal-spw").value;
+        if (!studentId) throw new Error("请输入学号");
+        await api("/api/student/bind", {
+          method: "POST",
+          body: { encrypted: await encryptedFields({student_id: studentId, password}) }
+        });
+        closeModal();
+        toast("统一认证信息已绑定");
+        await refreshAllData();
+        await renderPage();
+      });
+      return;
+    }
+
+    // 保存个人中心认证学号
+    if (action === "save-student-bind") {
+      await withButtonLoading(actionBtn, async () => {
+        const studentId = $("profile-sid").value.trim();
+        const password = $("profile-spw").value;
+        if (!studentId) throw new Error("请输入学号");
+        await api("/api/student/bind", {
+          method: "POST",
+          body: { encrypted: await encryptedFields({student_id: studentId, password}) }
+        });
+        toast("统一认证信息已更新");
+        await refreshAllData();
+        await renderPage();
+      });
+      return;
+    }
+
+    // 开关自动签到
+    if (action === "toggle-signin") {
+      const enable = actionBtn.dataset.enable === "true";
+      await withButtonLoading(actionBtn, async () => {
+        const result = await api("/api/signin/auto", {
+          method: "POST",
+          body: { enabled: enable }
+        });
+        const actualEnabled = Boolean(result.auto_signin ?? enable);
+        state.student = { ...(state.student || {}), auto_signin: actualEnabled };
+        if (state.user?.student) state.user.student.auto_signin = actualEnabled;
+        if (state.signinSchedule) state.signinSchedule.enabled = actualEnabled;
+        toast(actualEnabled ? "自动签到已开启" : "自动签到已关闭");
+        await refreshAllData();
+        await renderPage();
+      });
+      return;
+    }
+
+    // 上传 TD 照片
+    if (action === "upload-td-photos") {
+      await withButtonLoading(actionBtn, async () => {
+        const inEl = $("td-in");
+        const outEl = $("td-out");
+        const inPhoto = inEl && inEl.files[0];
+        const outPhoto = outEl && outEl.files[0];
+
+        if (!inPhoto && !outPhoto) {
+          throw new Error("请选择入口或出口打卡机照片");
+        }
+
+        const fd = new FormData();
+        if (inPhoto) fd.append("entrance", inPhoto);
+        if (outPhoto) fd.append("exit", outPhoto);
+
+        const res = await api("/api/td/photos", {
+          method: "POST",
+          body: fd
+        });
+        toast(res.message || "打卡照片已成功上传");
+      });
+      return;
+    }
+
+    // 下载电脑端 TD 本地桥接
+    if (action === "download-td-bridge") {
+      window.open("/downloads/td-web-bridge.py", "_blank", "noopener");
+      toast("桥接脚本已开始下载");
+      return;
+    }
+
+    // 安装可选的篡改猴 localhost 兼容助手
+    if (action === "install-td-helper") {
+      window.open("/downloads/td-tampermonkey.user.js", "_blank", "noopener");
+      toast("正在打开篡改猴助手安装页");
+      return;
+    }
+
+    // 测试电脑端 TD 本地桥接
+    if (action === "test-td-bridge") {
+      await withButtonLoading(actionBtn, async () => {
+        const token = tdBridgeToken();
+        const result = await requestTdBridge("/health", { method: "GET", token });
+        if (!result.success) throw new Error(result.message || "本地桥接测试失败");
+        toast(result.message || "电脑端 TD 桥接已连接");
+      });
+      return;
+    }
+
+    // 电脑 WebUI 发起本机 TD
+    if (action === "run-td-desktop") {
+      await withButtonLoading(actionBtn, async () => {
+        const studentId = String(state.student?.student_id || "").trim();
+            if (!studentId) throw new Error("请先绑定统一认证学号");
+
+
+        const entranceFile = $("td-in")?.files?.[0];
+        const exitFile = $("td-out")?.files?.[0];
+        if (!entranceFile || !exitFile) throw new Error("请同时选择入口与出口打卡机照片");
+        const gapMinutes = Number($("td-gap-minutes")?.value || 4);
+        if (!Number.isInteger(gapMinutes) || gapMinutes < 1 || gapMinutes > 15) throw new Error("时间差需为 1～15 分钟的整数");
+
+        const token = tdBridgeToken();
+        const [entrancePhoto, exitPhoto] = await Promise.all([
+          fileToDataUrl(entranceFile),
+          fileToDataUrl(exitFile)
+        ]);
+        const payload = {
+          student_id: studentId,
+          campus: $("td-campus")?.value || "xueyuanlu",
+          entrance_machine_id: Number($("td-entrance-machine")?.value),
+          exit_machine_id: Number($("td-exit-machine")?.value),
+          gap_seconds: gapMinutes * 60,
+          entrance_photo: entrancePhoto,
+          exit_photo: exitPhoto
+        };
+        const result = await requestTdBridge("/td/manual", { method: "POST", payload, token });
+        if (!result.success) throw new Error(result.message || "电脑端 TD 未成功完成");
+        toast(result.message || "电脑端 TD 打卡完成");
+        await renderPage();
+      });
+      return;
+    }
+
+    // TD 电脑/手机打卡提示说明
+    if (action === "show-td-guide") {
+      showModal(`
+        <h3 style="margin-bottom: 10px;">TD 本机打卡指南</h3>
+        <p class="muted-sm" style="line-height: 1.7; margin-bottom: 14px;">
+          <b>电脑 WebUI：</b><br/>
+          1. 电脑连接校园网，下载并运行本地桥接脚本；<br/>
+          2. 将窗口中显示的桥接码填入网页，先点击“测试本地桥接”；<br/>
+          3. 选择入口图、出口图、校区和机位，再点击“电脑本机发起 TD”；<br/>
+          4. 若浏览器阻止网页访问 127.0.0.1，请安装篡改猴及页面提供的辅助脚本，然后重试。篡改猴不能替代本地桥接。<br/><br/>
+          <b>Android App：</b><br/>
+          手机连接校园网后进入 TD 页面，选择照片并点击“本机发起手动 TD”，无需电脑桥接。
+        </p>
+        <button type="button" class="btn wide" data-action="close-modal">我知道了</button>
+      `);
+      return;
+    }
+
+    // 抖音 Cookie 获取教程
+    if (action === "show-douyin-cookie-guide") {
+      openDouyinCookieGuide();
+      return;
+    }
+
+    // 打开 Cookie 导入弹窗
+    if (action === "open-cookie-dialog") {
+      openCookieModal();
+      return;
+    }
+
+    // 提交 Cookie 导入
+    if (action === "submit-modal-cookies") {
+      await withButtonLoading(actionBtn, async () => {
+        const cookies = $("modal-cookies").value.trim();
+        if (!cookies) throw new Error("请输入 Cookie 内容");
+        await api("/api/douyin/session", {
+          method: "POST",
+          body: { cookies }
+        });
+        state.douyinFriendResults = [];
+        state.douyinFriendsLoaded = false;
+        state.douyinFriendsError = "";
+        state.douyinFriendQuery = "";
+        closeModal();
+        toast("Cookie 导入成功！");
+        await refreshAllData();
+        await renderPage();
+      });
+      return;
+    }
+
+
+    // 从抖音聊天页重新读取完整好友列表
+    if (action === "refresh-douyin-friends") {
+      await loadDouyinFriendList(actionBtn, true);
+      return;
+    }
+
+    // 添加好友到续火花列表
+    if (action === "add-spark-friend") {
+      const friend = normalizeSparkTarget({
+        name: actionBtn.dataset.name || "",
+        conversation_id: actionBtn.dataset.conversationId || "",
+        conversation_short_id: actionBtn.dataset.conversationShortId || "",
+        conversation_type: actionBtn.dataset.conversationType || "",
+        mode: "standard",
+        message: ""
+      });
+      if (!friend.name) return;
+      if (!state.sparkTargets.some(item => sparkConversationKey(item) === sparkConversationKey(friend))) {
+        state.sparkTargets.push(friend);
+        toast(`已添加${friend.conversation_type === "group" ? "群聊" : "好友"} ${friend.name}，保存配置后生效`);
+      }
+      refreshSparkFriendEditors();
+      return;
+    }
+
+    // 从续火花列表移除好友
+    if (action === "remove-spark-target") {
+      const index = Number(actionBtn.dataset.index);
+      if (Number.isInteger(index) && index >= 0 && index < state.sparkTargets.length) {
+        state.sparkTargets.splice(index, 1);
+        refreshSparkFriendEditors();
+      }
+      return;
+    }
+
+    // 保存火花配置
+    if (action === "save-spark-config") {
+      const enable = actionBtn.dataset.enable === "true";
+      await withButtonLoading(actionBtn, async () => {
+        const defaultMsg = $("spark-default-msg").value.trim();
+        const hour = Number($("spark-hour").value || 9);
+        const targets = Array.from(document.querySelectorAll(".spark-target-row")).map((row) => {
+          const index = Number(row.dataset.index);
+          const current = state.sparkTargets[index] || {};
+          const mode = row.querySelector(".spark-target-mode")?.value === "custom" ? "custom" : "standard";
+          const message = mode === "custom" ? (row.querySelector(".spark-target-message")?.value || "").trim() : "";
+          return { name: current.name || "", mode, message };
+        }).filter(target => target.name);
+        state.sparkTargets = targets.map(normalizeSparkTarget);
+
+        await api("/api/douyin/config", {
+          method: "PUT",
+          body: {
+            enabled: enable,
+            default_message: defaultMsg,
+            hour,
+            targets
+          }
+        });
+        toast("火花配置已成功保存！");
+        await refreshAllData();
+        await renderPage();
+      });
+      return;
+    }
+
+    // 立即执行一次发火花
+    if (action === "run-spark-now") {
+      await withButtonLoading(actionBtn, async () => {
+        const res = await api("/api/douyin/run", { method: "POST", body: {} });
+        toast(res.message || "续火花任务已执行");
+      });
+      return;
+    }
+
+    // 退出登录
+    if (action === "logout") {
+      if (!confirm("确定要退出当前账号吗？")) return;
+      try {
+        await api("/api/auth/logout", { method: "POST", body: {} });
+      } catch {}
+      clearAuthState();
+      toast("已安全退出");
+      switchRoute("login");
+      showAuthView(false);
+      return;
+    }
+  });
+
+  document.addEventListener("input", (e) => {
+    const friendSearch = e.target.closest("#spark-friend-search");
+    if (friendSearch) {
+      state.douyinFriendQuery = friendSearch.value;
+      const resultBox = $("spark-friend-results");
+      if (resultBox) resultBox.innerHTML = renderDouyinFriendResults();
+      return;
+    }
+    const messageInput = e.target.closest(".spark-target-message");
+    if (!messageInput) return;
+    const index = Number(messageInput.dataset.index);
+    if (Number.isInteger(index) && state.sparkTargets[index]) {
+      state.sparkTargets[index].message = messageInput.value;
+    }
+  });
+
+  document.addEventListener("change", (e) => {
+    if (e.target.closest("#td-campus")) {
+      updateTdMachineOptions();
+      return;
+    }
+    const modeSelect = e.target.closest(".spark-target-mode");
+    if (!modeSelect) return;
+    const index = Number(modeSelect.dataset.index);
+    if (!Number.isInteger(index) || !state.sparkTargets[index]) return;
+    const mode = modeSelect.value === "custom" ? "custom" : "standard";
+    state.sparkTargets[index].mode = mode;
+    if (mode === "standard") state.sparkTargets[index].message = "";
+    refreshSparkFriendEditors();
+  });
+
+  // 接收篡改猴助手返回的本地 TD 桥接结果
+  window.addEventListener("message", (event) => {
+    const data = event.data || {};
+    if (event.source !== window || data.source !== "muztool-tampermonkey" || data.type !== "td-response") return;
+    const waiter = state.tdBridgeWaiters.get(data.requestId);
+    if (!waiter) return;
+    clearTimeout(waiter.timer);
+    state.tdBridgeWaiters.delete(data.requestId);
+    const payload = data.payload || {};
+    if (payload.success) waiter.resolve(payload);
+    else waiter.reject(new Error(payload.message || "本地桥接请求失败"));
+  });
+
+  // 监听 Hash 变化
+  window.addEventListener("hashchange", () => {
+    renderPage();
+  });
+
+  function connectLiveNotifications() {
+    if (!state.token || state.liveSocket?.readyState === WebSocket.OPEN || state.liveSocket?.readyState === WebSocket.CONNECTING) return;
+    clearTimeout(state.liveReconnectTimer);
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(`${protocol}//${location.host}/api/notifications/ws?token=${encodeURIComponent(state.token)}`);
+    state.liveSocket = socket;
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type !== "notification" || !payload.item) return;
+        const item = payload.item;
+        if (!state.notes.some(existing => existing.id === item.id)) state.notes.unshift(item);
+        toast(item.content || item.body || item.title || "收到新通知");
+        if ("Notification" in window && Notification.permission === "granted") {
+          const notice = new Notification(item.title || "盐的工具箱", { body: item.content || item.body || "" });
+          if (item.url) notice.onclick = () => window.open(item.url, "_blank", "noopener");
+        }
+      } catch {}
+    };
+    socket.onclose = () => {
+      if (state.liveSocket === socket) state.liveSocket = null;
+      if (state.token) state.liveReconnectTimer = setTimeout(connectLiveNotifications, 5000);
+    };
+  }
+
+  // 应用启动入口
+  async function bootApp() {
+    const keepLogin = localStorage.getItem(STORAGE_KEYS.saveLogin) === "true";
+    // The HttpOnly cookie is the source of truth for persistent login. Always
+    // reconcile it at startup so a stale local token cannot mask a valid
+    // server-side session.
+    if (keepLogin) {
+      await restorePersistentSession();
+    }
+    if (!state.token) {
+      const current = getRoute();
+      showAuthView(current === "register");
+      return;
+    }
+
+    try {
+      await refreshAllData();
+      connectLiveNotifications();
+      await renderPage();
+    } catch (err) {
+      if (String(err.message).includes("未登录")) {
+        clearAuthState();
+        switchRoute("login");
+      } else {
+        toast(err.message, "error");
+        await renderPage();
+      }
+    }
+  }
+
+  // 页面加载完成后自启
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bootApp);
+  } else {
+    bootApp();
+  }
+})();
 </script>
 </body>
 </html>

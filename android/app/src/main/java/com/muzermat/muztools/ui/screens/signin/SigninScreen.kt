@@ -16,7 +16,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.muzermat.muztools.ui.components.PendingApprovalBanner
 import com.muzermat.muztools.ui.components.SectionHeader
 import com.muzermat.muztools.ui.components.StatusBadge
 import com.muzermat.muztools.ui.screens.home.TodayCourseCard
@@ -43,9 +42,6 @@ fun SigninScreen(
         }
     }
 
-    val featureStatus = uiState.studentStatus.signinStatus.ifBlank { uiState.studentStatus.approvals.signin }
-    val isApproved = featureStatus == "approved" || featureStatus == "已通过"
-    val isPending = featureStatus == "pending" || featureStatus == "待审批"
     val isUnbound = uiState.studentStatus.studentId.isNullOrBlank()
 
     Scaffold(
@@ -88,12 +84,6 @@ fun SigninScreen(
                 .padding(paddingValues),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            if (isPending) {
-                item {
-                    PendingApprovalBanner(message = "统一身份认证已提交，管理员审批中。审批通过后可开启后台自动签到。")
-                }
-            }
-
             // 统一身份认证绑定卡片
             item {
                 SectionHeader(title = "统一身份认证")
@@ -171,16 +161,16 @@ fun SigninScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = if (!isApproved) "需要学生身份认证审批通过后方可开启" else "系统将在课前自动完成签到并通过通知告知",
+                                text = if (isUnbound) "请先绑定统一身份认证" else "系统将在课前自动完成签到并通过通知告知",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (!isApproved) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (isUnbound) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
                         Switch(
                             checked = uiState.isAutoSigninEnabled,
                             onCheckedChange = { viewModel.toggleAutoSignin(it) },
-                            enabled = isApproved && !uiState.isTogglingAuto
+                            enabled = !isUnbound && !uiState.isTogglingAuto
                         )
                     }
                 }

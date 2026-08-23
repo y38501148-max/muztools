@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .douyin import normalize_cookies
 
@@ -21,7 +22,8 @@ DESKTOP_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 )
-LOGIN_URL = "https://creator.douyin.com/login"
+LOGIN_URL = "https://www.douyin.com/"
+CHECK_QR_URL = "https://sso.douyin.com/check_qrconnect/"
 ACTIVE = {"pending", "scanned"}
 
 
@@ -42,7 +44,7 @@ class QrSession:
 
 _SESSIONS: dict[str, QrSession] = {}
 _LOCK = threading.Lock()
-_TTL = 180
+_TTL = 300
 
 
 def _purge_locked() -> None:
@@ -102,19 +104,23 @@ def _watch_worker(session: QrSession) -> None:
     events = workdir / "events.jsonl"
     events.touch()
     try:
-        session.proc = subprocess.Popen(
-            [sys.executable, "-m", "muztool.douyin_qr", str(workdir)],
-            cwd=str(Path(__file__).resolve().parent.parent),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        stderr_file = (workdir / "worker.stderr.log").open("ab")
+        try:
+            session.proc = subprocess.Popen(
+                [sys.executable, "-m", "muztool.douyin_qr", str(workdir)],
+                cwd=str(Path(__file__).resolve().parent.parent),
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_file,
+            )
+        finally:
+            stderr_file.close()
     except Exception as exc:
         session.status = "failed"
         session.error = f"无法启动扫码进程: {exc}"
         return
 
     offset = 0
-    deadline = time.time() + 160
+    deadline = time.time() + 280
     while time.time() < deadline and session.status in ACTIVE:
         offset = _read_events(session, events, offset)
         if session.proc.poll() is not None and not _has_pending_events(events, offset):
@@ -175,8 +181,10 @@ def _apply_event(session: QrSession, event: dict[str, Any]) -> None:
     elif kind == "status":
         status = str(event.get("status") or "")
         if status == "scanned" and session.status in ACTIVE:
+            guidance = str(event.get("error") or "")
+            if guidance or session.status != "scanned":
+                session.error = guidance
             session.status = "scanned"
-            session.error = ""
         elif status in {"expired", "cancelled", "failed"} and session.status in ACTIVE:
             session.status = status
             session.error = str(event.get("error") or session.error)
@@ -186,6 +194,11 @@ def _apply_event(session: QrSession, event: dict[str, Any]) -> None:
             session.cookies = normalize_cookies(cookies)
         except Exception:
             session.cookies = cookies if isinstance(cookies, list) else []
+        if not session.cookies:
+            if session.status in ACTIVE:
+                session.status = "failed"
+                session.error = "扫码已完成，但未获取到抖音登录 Cookie"
+            return
         session.nickname = str(event.get("nickname") or "")
         session.status = "success"
         session.error = ""
@@ -208,14 +221,15 @@ def _b64_to_png(raw: str) -> bytes:
 
 
 def _worker_stderr(session: QrSession) -> str:
-    proc = session.proc
-    if not proc or not proc.stderr:
+    if not session.workdir:
         return ""
     try:
-        text = proc.stderr.read().decode("utf-8", errors="replace").strip()
-    except Exception:
+        text = (Path(session.workdir) / "worker.stderr.log").read_text(
+            encoding="utf-8", errors="replace"
+        ).strip()
+    except OSError:
         return ""
-    return text[-300:]
+    return text[-1000:]
 
 
 def _stop_worker(session: QrSession) -> None:
@@ -299,7 +313,7 @@ def public_qr(session: QrSession) -> dict[str, Any]:
         "qr_image": qr_b64,
         "nickname": session.nickname,
         "error": session.error,
-        "valid": session.status == "success",
+        "valid": session.status == "success" and bool(session.cookies),
     }
 
 
@@ -308,14 +322,76 @@ def _emit(events: Path, payload: dict[str, Any]) -> None:
         handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
+AUTH_COOKIE_EXACT = {
+    "sessionid",
+    "sessionid_ss",
+    "sessionid_ads",
+    "sessionid_creator",
+    "sid_tt",
+    "sid_tt_ss",
+    "sid_guard",
+    "uid_tt",
+    "uid_tt_ss",
+}
+
+
 def _logged_in(cookies: list[dict[str, Any]]) -> bool:
-    names = {str(item.get("name") or "").lower() for item in cookies}
-    if names & {"sessionid", "sessionid_ss", "sid_tt", "sid_guard", "uid_tt"}:
-        return True
-    return any("sessionid" in name or name.startswith("sid_") for name in names)
+    for item in cookies:
+        name = str(item.get("name") or "").strip().lower()
+        value = str(item.get("value") or "").strip()
+        if not value:
+            continue
+        if name in AUTH_COOKIE_EXACT:
+            return True
+        if "sessionid" in name or name.startswith("sid_") or name.startswith("uid_tt"):
+            return True
+    return False
 
 
-def _guess_name(page: Any) -> str:
+def _merge_cookies(*cookie_sets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for cookies in cookie_sets:
+        for item in cookies or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            value = item.get("value")
+            if not name or value is None:
+                continue
+            domain = str(item.get("domain") or ".douyin.com")
+            path = str(item.get("path") or "/")
+            merged[(name, domain, path)] = {
+                "name": name,
+                "value": str(value),
+                "domain": domain,
+                "path": path,
+            }
+    return list(merged.values())
+
+
+def _payload_data(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data")
+    return data if isinstance(data, dict) else payload
+
+
+def _extract_payload_cookies(payload: Any) -> list[dict[str, Any]]:
+    data = _payload_data(payload)
+    raw = data.get("cookies") or data.get("cookie") or data.get("set_cookies")
+    if not raw:
+        return []
+    try:
+        return normalize_cookies(raw)
+    except Exception:
+        return []
+
+
+def _guess_name(page: Any, state: dict[str, Any] | None = None) -> str:
+    if state:
+        name = str(state.get("nickname") or "").strip()
+        if name:
+            return name[:32]
     try:
         title = page.title()
         return title.replace("抖音", "").replace("-", "").replace("创作者中心", "").strip()[:32]
@@ -376,16 +452,63 @@ def _page_left_login(page: Any) -> bool:
         url = str(page.url or "")
     except Exception:
         return False
-    return "creator.douyin.com" in url and "/login" not in url
+    return "douyin.com" in url and "/login" not in url and "sso.douyin.com" not in url
+
+
+def _page_has_login_artifacts(page: Any) -> bool:
+    """Douyin's web login writes these security keys after the callback completes."""
+    keys = (
+        "security-sdk/s_sdk_crypt_sdk",
+        "security-sdk/s_sdk_sign_data_key/web_protect",
+    )
+    try:
+        values = page.evaluate(
+            "keys => keys.map(key => window.localStorage.getItem(key) || '')",
+            list(keys),
+        )
+        return isinstance(values, list) and all(str(value).strip() for value in values)
+    except Exception:
+        return False
+
+
+def _is_login_redirect(value: str) -> bool:
+    """Accept only a real Douyin passport callback, never an MFA/static asset URL."""
+    try:
+        parsed = urlparse(value.strip())
+    except Exception:
+        return False
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    host = (parsed.hostname or "").lower().rstrip(".")
+    path = (parsed.path or "/").lower()
+    if not host or path.endswith((".js", ".css", ".map", ".png", ".jpg", ".jpeg", ".svg", ".ico")):
+        return False
+    if host == "auth.zijieapi.com" or "second_verification" in path:
+        return False
+    if host == "sso.douyin.com":
+        return "callback" in path or "/passport/" in path
+    if host == "douyin.com" or host.endswith(".douyin.com"):
+        return "/passport/" in path and ("callback" in path or "/sso/" in path)
+    return False
 
 
 def _handle_check_payload(data: dict[str, Any], state: dict[str, Any], events: Path) -> None:
-    status = str(data.get("status") or data.get("error_code") or "")
-    redirect = str(data.get("redirect_url") or data.get("redirect") or "")
-    if not redirect.startswith("http"):
-        maybe_url = str(data.get("url") or "")
-        if maybe_url.startswith("http") and "qrcode" not in maybe_url:
-            redirect = maybe_url
+    data = _payload_data(data)
+    status = str(data.get("status") or data.get("error_code") or data.get("status_code") or "")
+    redirect_candidates = (
+        data.get("redirect_url"),
+        data.get("redirect"),
+        data.get("redirect_uri"),
+        data.get("next_url"),
+        data.get("url"),
+        data.get("url_path"),
+    )
+    redirect = next(
+        (str(candidate) for candidate in redirect_candidates if candidate and _is_login_redirect(str(candidate))),
+        "",
+    )
+    if data.get("nickname") or data.get("username"):
+        state["nickname"] = str(data.get("nickname") or data.get("username") or "")
     _emit(
         events,
         {
@@ -396,12 +519,28 @@ def _handle_check_payload(data: dict[str, Any], state: dict[str, Any], events: P
             "has_redirect": bool(redirect),
         },
     )
+    if status == "2046":
+        first_notice = not state.get("verification_required")
+        state["verification_required"] = True
+        state["confirmed"] = False
+        state["redirect"] = ""
+        if first_notice:
+            _emit(
+                events,
+                {
+                    "event": "status",
+                    "status": "scanned",
+                    "error": "抖音要求后端网页登录进行二次安全验证；当前扫码流程尚未提供验证码或密码输入入口",
+                },
+            )
+        return
     if status in {"2", "scanned"}:
         _emit(events, {"event": "status", "status": "scanned"})
         return
-    if status in {"3", "success"} or redirect.startswith("http"):
+    if status in {"3", "success", "confirmed", "confirm"} or bool(redirect):
+        state["verification_required"] = False
         state["confirmed"] = True
-        if redirect.startswith("http"):
+        if redirect:
             state["redirect"] = redirect
         _emit(events, {"event": "status", "status": "scanned"})
         return
@@ -412,11 +551,71 @@ def _handle_check_payload(data: dict[str, Any], state: dict[str, Any], events: P
 
 def _worker_main(workdir: Path) -> int:
     events = workdir / "events.jsonl"
-    state = {"redirect": "", "done": False, "token": "", "confirmed": False}
+    state = {
+        "redirect": "",
+        "done": False,
+        "token": "",
+        "confirmed": False,
+        "verification_required": False,
+        "cookies": [],
+        "nickname": "",
+        "finalized": False,
+    }
 
     def emit_qr(png: bytes) -> None:
         if png:
             _emit(events, {"event": "qr", "png": base64.b64encode(png).decode("ascii")})
+
+    def authenticated_cookies(context: Any) -> list[dict[str, Any]]:
+        try:
+            browser_cookies = context.cookies()
+        except Exception:
+            browser_cookies = []
+        return _merge_cookies(browser_cookies, state.get("cookies") or [])
+
+    def emit_success_if_ready(context: Any, page: Any) -> bool:
+        cookies = authenticated_cookies(context)
+        if not cookies:
+            return False
+        if not (_logged_in(cookies) or _page_has_login_artifacts(page)):
+            return False
+        _emit(
+            events,
+            {
+                "event": "success",
+                "cookies": cookies,
+                "nickname": _guess_name(page, state),
+            },
+        )
+        return True
+
+    def finalize_confirmed_login(page: Any, context: Any) -> None:
+        """Visit a normal creator endpoint after confirmation so Set-Cookie is committed."""
+        if state.get("finalized"):
+            return
+        state["finalized"] = True
+        urls = [
+            "https://www.douyin.com/",
+            "https://creator.douyin.com/creator-micro/data/following/chat",
+        ]
+        for url in urls:
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_timeout(1200)
+            except Exception:
+                pass
+            try:
+                info = page.request.get("https://creator.douyin.com/web/api/media/user/info/", timeout=12000)
+                payload = info.json()
+                data = _payload_data(payload)
+                state["cookies"] = _merge_cookies(state.get("cookies") or [], _extract_payload_cookies(payload))
+                nickname = data.get("nickname") or data.get("unique_id") or data.get("name")
+                if nickname:
+                    state["nickname"] = str(nickname)
+            except Exception:
+                pass
+            if emit_success_if_ready(context, page):
+                return
 
     try:
         from playwright.sync_api import sync_playwright
@@ -440,16 +639,29 @@ def _worker_main(workdir: Path) -> int:
 
             def on_response(response: Any) -> None:
                 url = getattr(response, "url", "") or ""
-                interesting = any(key in url for key in ("get_qrcode", "check_qrconnect", "check_login", "login/callback"))
+                interesting = any(
+                    key in url
+                    for key in (
+                        "get_qrcode",
+                        "check_qrconnect",
+                        "check_login",
+                        "login/callback",
+                        "/web/api/media/user/info/",
+                    )
+                )
                 if not interesting:
                     return
                 try:
                     payload = response.json()
                 except Exception:
                     payload = None
-                data = payload.get("data") if isinstance(payload, dict) else None
+                data = _payload_data(payload)
+                state["cookies"] = _merge_cookies(state.get("cookies") or [], _extract_payload_cookies(payload))
+                nickname = data.get("nickname") or data.get("unique_id") or data.get("name")
+                if nickname:
+                    state["nickname"] = str(nickname)
                 if "get_qrcode" in url and isinstance(data, dict):
-                    token = str(data.get("token") or "")
+                    token = str(data.get("token") or data.get("qrcode_token") or "")
                     if token:
                         state["token"] = token
                     png = decode_qr_image(data)
@@ -487,41 +699,35 @@ def _worker_main(workdir: Path) -> int:
                 return 1
 
             followed: set[str] = set()
-            deadline = time.time() + 150
+            deadline = time.time() + 260
             while time.time() < deadline and not state["done"]:
                 if state["token"] and not state["confirmed"]:
                     try:
                         check = page.request.get(
-                            "https://creator.douyin.com/passport/web/check_qrconnect/",
+                            CHECK_QR_URL,
                             params={
                                 "token": state["token"],
-                                "service": "https://creator.douyin.com",
+                                "service": "https://www.douyin.com",
                                 "need_logo": "false",
                                 "is_frontier": "false",
                                 "need_short_url": "false",
-                                "aid": "2906",
+                                "passport_jssdk_version": "1.0.26",
+                                "passport_jssdk_type": "pro",
+                                "aid": "6383",
                                 "language": "zh",
                                 "account_sdk_source": "sso",
                                 "device_platform": "web_app",
                             },
                         )
                         payload = check.json()
-                        data = payload.get("data") if isinstance(payload, dict) else None
+                        data = _payload_data(payload)
+                        state["cookies"] = _merge_cookies(state.get("cookies") or [], _extract_payload_cookies(payload))
                         if isinstance(data, dict):
                             _handle_check_payload(data, state, events)
                     except Exception:
                         pass
 
-                cookies = context.cookies()
-                if _logged_in(cookies) or (state["confirmed"] and _page_left_login(page)):
-                    _emit(
-                        events,
-                        {
-                            "event": "success",
-                            "cookies": cookies,
-                            "nickname": _guess_name(page),
-                        },
-                    )
+                if emit_success_if_ready(context, page):
                     browser.close()
                     return 0
 
@@ -534,7 +740,7 @@ def _worker_main(workdir: Path) -> int:
                         except Exception:
                             pass
                         page.wait_for_timeout(1500)
-                        cookies = context.cookies()
+                        cookies = authenticated_cookies(context)
                         _emit(
                             events,
                             {
@@ -544,20 +750,16 @@ def _worker_main(workdir: Path) -> int:
                                 "cookies": _cookie_snapshot(cookies),
                             },
                         )
-                        if _logged_in(cookies) or _page_left_login(page):
-                            _emit(
-                                events,
-                                {
-                                    "event": "success",
-                                    "cookies": cookies,
-                                    "nickname": _guess_name(page),
-                                },
-                            )
+                        if emit_success_if_ready(context, page):
+                            browser.close()
+                            return 0
+                        finalize_confirmed_login(page, context)
+                        if emit_success_if_ready(context, page):
                             browser.close()
                             return 0
                     elif not redirect:
                         page.wait_for_timeout(2000)
-                        cookies = context.cookies()
+                        cookies = authenticated_cookies(context)
                         _emit(
                             events,
                             {
@@ -567,24 +769,23 @@ def _worker_main(workdir: Path) -> int:
                                 "cookies": _cookie_snapshot(cookies),
                             },
                         )
-                        if _logged_in(cookies) or _page_left_login(page):
-                            _emit(
-                                events,
-                                {
-                                    "event": "success",
-                                    "cookies": cookies,
-                                    "nickname": _guess_name(page),
-                                },
-                            )
+                        if emit_success_if_ready(context, page):
+                            browser.close()
+                            return 0
+                        if _page_left_login(page):
+                            state["redirect"] = str(getattr(page, "url", "") or "")
+                        finalize_confirmed_login(page, context)
+                        if emit_success_if_ready(context, page):
                             browser.close()
                             return 0
                 page.wait_for_timeout(1000)
-            cookies = context.cookies()
-            if _logged_in(cookies) or (state["confirmed"] and (_page_left_login(page))):
-                _emit(events, {"event": "success", "cookies": cookies, "nickname": _guess_name(page)})
+            if emit_success_if_ready(context, page):
                 browser.close()
                 return 0
-            _emit(events, {"event": "status", "status": "expired", "error": "二维码已过期，请重试"})
+            if state["confirmed"]:
+                _emit(events, {"event": "failed", "error": "扫码已确认，但服务器未获取到有效抖音登录 Cookie，请重新扫码或改用 Cookie 导入"})
+            else:
+                _emit(events, {"event": "status", "status": "expired", "error": "二维码已过期，请重试"})
             browser.close()
             return 1
     except Exception as exc:

@@ -20,7 +20,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.muzermat.muztools.ui.components.PendingApprovalBanner
 import com.muzermat.muztools.ui.components.SectionHeader
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,12 +87,6 @@ fun TdScreen(
                 .padding(paddingValues),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            val approved = uiState.studentStatus == "approved" || uiState.studentStatus == "已通过"
-            if (!approved) {
-                item {
-                    PendingApprovalBanner(message = "学生认证通过审批后才可查询次数并在校园网发起手动 TD。")
-                }
-            }
             // 锻炼统计大卡片
             item {
                 Card(
@@ -279,7 +272,7 @@ fun TdScreen(
             item {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "手动 TD 由本机在校园网直连打卡机发起，照片不会上传。默认伪装 4 分钟。",
+                    text = "Android 可在校园网直接发起；电脑 WebUI 也已支持通过本地桥接发起。照片不会保存到 MuzTool 服务器，默认时间差 4 分钟。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
@@ -291,7 +284,7 @@ fun TdScreen(
                 ) {
                     Button(
                         onClick = { viewModel.submitManualTd(context) },
-                        enabled = !uiState.isSubmittingManual && (uiState.studentStatus == "approved" || uiState.studentStatus == "已通过"),
+                        enabled = !uiState.isSubmittingManual && uiState.studentId.isNotBlank(),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()

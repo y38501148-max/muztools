@@ -6,7 +6,8 @@ from typing import Any
 
 from .config import DATA_DIR, ensure_dirs
 from . import appver
-from .store import FEATURE_KEYS, ensure_approvals, iter_users, public_user, resolve_user, save_user, set_feature_approval
+from .invites import generate_invites, invite_stats
+from .store import ensure_approvals, iter_users, public_user, resolve_user, save_user, set_student_password
 
 
 def _print(data: Any) -> None:
@@ -17,27 +18,6 @@ def _need(user: dict[str, Any] | None, key: str) -> dict[str, Any]:
     if not user:
         raise SystemExit(f"未找到用户：{key}")
     return user
-
-
-def cmd_pending(_: argparse.Namespace) -> None:
-    items = []
-    for user in iter_users():
-        ensure_approvals(user)
-        pending = [k for k, v in user.get("approvals", {}).items() if v == "pending"]
-        if not pending:
-            continue
-        items.append(
-            {
-                "id": user["id"],
-                "username": user["username"],
-                "display_name": user.get("display_name"),
-                "student_id": user.get("student", {}).get("student_id"),
-                "real_name": user.get("student", {}).get("real_name"),
-                "pending": pending,
-                "approvals": user.get("approvals"),
-            }
-        )
-    _print({"count": len(items), "items": items})
 
 
 def cmd_list(_: argparse.Namespace) -> None:
@@ -53,7 +33,7 @@ def cmd_list(_: argparse.Namespace) -> None:
                 "real_name": student.get("real_name"),
                 "status": student.get("status"),
                 "auto_signin": student.get("auto_signin"),
-                "approvals": ensure_approvals(user).get("approvals"),
+                "permissions": "enabled",
             }
         )
     _print({"count": len(items), "items": items})
@@ -70,49 +50,12 @@ def cmd_show(args: argparse.Namespace) -> None:
     _print(payload)
 
 
-def cmd_approve_feature(args: argparse.Namespace) -> None:
-    user = _need(resolve_user(args.user), args.user)
-    if not user.get("student", {}).get("student_id"):
-        raise SystemExit("该用户尚未绑定学号")
-    set_feature_approval(user, args.feature, "approved")
-    save_user(user)
-    print(f"已批准 {user['username']} 的 {args.feature}")
-
-
-def cmd_reject_feature(args: argparse.Namespace) -> None:
-    user = _need(resolve_user(args.user), args.user)
-    set_feature_approval(user, args.feature, "rejected")
-    save_user(user)
-    print(f"已拒绝 {user['username']} 的 {args.feature}")
-
-
-def cmd_approve(args: argparse.Namespace) -> None:
-    user = _need(resolve_user(args.user), args.user)
-    student = user.setdefault("student", {})
-    if not student.get("student_id"):
-        raise SystemExit("该用户尚未绑定学号")
-    student["status"] = "verified"
-    for key in FEATURE_KEYS:
-        set_feature_approval(user, key, "approved")
-    save_user(user)
-    print(f"已批准 {user['username']} 的全部功能")
-
-
-def cmd_reject(args: argparse.Namespace) -> None:
-    user = _need(resolve_user(args.user), args.user)
-    student = user.setdefault("student", {})
-    student["status"] = "rejected"
-    student["auto_signin"] = False
-    save_user(user)
-    print(f"已拒绝 {user['username']} / {student.get('student_id')}")
-
-
 def cmd_revoke(args: argparse.Namespace) -> None:
     user = _need(resolve_user(args.user), args.user)
     student = user.setdefault("student", {})
     student["status"] = "unbound"
     student["auto_signin"] = False
-    student["password"] = ""
+    set_student_password(student, "")
     student["cookies"] = {}
     student["uid"] = ""
     student["session_id"] = ""
@@ -130,12 +73,17 @@ def cmd_disable_signin(args: argparse.Namespace) -> None:
 def cmd_enable_signin(args: argparse.Namespace) -> None:
     user = _need(resolve_user(args.user), args.user)
     student = user.setdefault("student", {})
-    if ensure_approvals(user).get("approvals", {}).get("signin") != "approved":
-        raise SystemExit("仅已批准自动签到的用户可开启")
     student["auto_signin"] = True
     save_user(user)
     print(f"已开启 {user['username']} 的自动签到")
 
+
+def cmd_generate_invites(args: argparse.Namespace) -> None:
+    _print(generate_invites(args.count))
+
+
+def cmd_invite_stats(_: argparse.Namespace) -> None:
+    _print(invite_stats())
 
 
 def cmd_version(_: argparse.Namespace) -> None:
@@ -164,6 +112,7 @@ def cmd_set_version(args: argparse.Namespace) -> None:
     data = appver.save_version(payload)
     _print(data)
 
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="muz-admin",
@@ -171,21 +120,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("pending", help="列出待审批学生").set_defaults(func=cmd_pending)
-    sub.add_parser("list", help="列出全部用户与审批状态").set_defaults(func=cmd_list)
+    sub.add_parser("list", help="列出全部用户").set_defaults(func=cmd_list)
     sub.add_parser("users", help="同 list").set_defaults(func=cmd_users)
 
     show = sub.add_parser("show", help="查看单个用户")
     show.add_argument("user")
     show.set_defaults(func=cmd_show)
-
-    approve = sub.add_parser("approve", help="批准学生认证，允许使用自动签到")
-    approve.add_argument("user")
-    approve.set_defaults(func=cmd_approve)
-
-    reject = sub.add_parser("reject", help="拒绝学生认证")
-    reject.add_argument("user")
-    reject.set_defaults(func=cmd_reject)
 
     revoke = sub.add_parser("revoke", help="撤销学生认证并清除保存的统一认证密码")
     revoke.add_argument("user")
@@ -195,9 +135,15 @@ def build_parser() -> argparse.ArgumentParser:
     disable.add_argument("user")
     disable.set_defaults(func=cmd_disable_signin)
 
-    enable = sub.add_parser("enable-signin", help="开启该用户的自动签到（需已审批）")
+    enable = sub.add_parser("enable-signin", help="开启该用户的自动签到")
     enable.add_argument("user")
     enable.set_defaults(func=cmd_enable_signin)
+
+    generate = sub.add_parser("generate-invites", help="批量生成注册邀请码")
+    generate.add_argument("--count", type=int, default=20, help="生成数量，默认 20，最多 500")
+    generate.set_defaults(func=cmd_generate_invites)
+
+    sub.add_parser("invite-stats", help="查看邀请码库存统计").set_defaults(func=cmd_invite_stats)
 
     version = sub.add_parser("version", help="查看当前客户端版本配置")
     version.set_defaults(func=cmd_version)
@@ -211,19 +157,6 @@ def build_parser() -> argparse.ArgumentParser:
     set_version.add_argument("--apk", default="", help="新安装包路径")
     set_version.add_argument("--force", action="store_true", help="强制更新，不可跳过")
     set_version.set_defaults(func=cmd_set_version)
-
-
-    for feature, help_text in (
-        ("signin", "自动签到"),
-        ("td", "TD / 阳光"),
-        ("spark", "抖音续火花"),
-    ):
-        ap = sub.add_parser(f"approve-{feature}", help=f"批准{help_text}")
-        ap.add_argument("user")
-        ap.set_defaults(func=cmd_approve_feature, feature=feature)
-        rp = sub.add_parser(f"reject-{feature}", help=f"拒绝{help_text}")
-        rp.add_argument("user")
-        rp.set_defaults(func=cmd_reject_feature, feature=feature)
 
     return parser
 

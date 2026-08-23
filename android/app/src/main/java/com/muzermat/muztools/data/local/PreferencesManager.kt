@@ -17,11 +17,16 @@ class PreferencesManager(context: Context) {
         private const val KEY_PASSWORD = "password"
         private const val KEY_REMEMBER_PASSWORD = "remember_password"
         private const val KEY_AUTO_LOGIN = "auto_login"
+        private const val KEY_DELIVERED_NOTIFICATIONS = "delivered_notifications"
         private const val DEFAULT_SERVER_URL = "http://150.138.79.9:10023"
         private const val LEGACY_SERVER_URL = "http://150.138.79.9:18787"
     }
 
-    private val prefs: SharedPreferences = try {
+    // Do not fall back to plaintext SharedPreferences: this store contains the
+    // application password when the user enables automatic login. If the
+    // Android Keystore is unavailable, fail closed instead of silently
+    // downgrading credential protection.
+    private val prefs: SharedPreferences = run {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
@@ -32,8 +37,6 @@ class PreferencesManager(context: Context) {
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
-    } catch (e: Exception) {
-        context.getSharedPreferences("muztools_fallback_prefs", Context.MODE_PRIVATE)
     }
 
     var serverUrl: String
@@ -93,6 +96,17 @@ class PreferencesManager(context: Context) {
             editor.remove(KEY_PASSWORD)
         }
         editor.apply()
+    }
+
+
+    fun wasNotificationDelivered(id: String): Boolean =
+        prefs.getStringSet(KEY_DELIVERED_NOTIFICATIONS, emptySet())?.contains(id) == true
+
+    fun markNotificationDelivered(id: String) {
+        val current = prefs.getStringSet(KEY_DELIVERED_NOTIFICATIONS, emptySet()).orEmpty().toMutableList()
+        current.remove(id)
+        current.add(0, id)
+        prefs.edit().putStringSet(KEY_DELIVERED_NOTIFICATIONS, current.take(100).toSet()).apply()
     }
 
     fun clearAuth() {

@@ -132,6 +132,19 @@ fun AuthScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                if (isRegisterMode) {
+                    OutlinedTextField(
+                        value = uiState.inviteCode,
+                        onValueChange = viewModel::onInviteCodeChange,
+                        label = { Text("邀请码") },
+                        placeholder = { Text("请输入有效邀请码") },
+                        singleLine = true,
+                        enabled = !uiState.isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
                 OutlinedTextField(
                     value = uiState.password,
                     onValueChange = viewModel::onPasswordChange,
@@ -213,7 +226,7 @@ fun AuthScreen(
                         focusManager.clearFocus()
                         if (isRegisterMode) viewModel.register() else viewModel.login()
                     },
-                    enabled = !uiState.isLoading && uiState.username.isNotBlank() && uiState.password.isNotBlank() && (!isRegisterMode || uiState.displayName.isNotBlank()),
+                    enabled = !uiState.isLoading && uiState.username.isNotBlank() && uiState.password.isNotBlank() && (!isRegisterMode || (uiState.displayName.isNotBlank() && uiState.inviteCode.isNotBlank())),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()

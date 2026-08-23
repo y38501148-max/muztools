@@ -24,6 +24,8 @@ import com.muzermat.muztools.ui.screens.spark.SparkScreen
 import com.muzermat.muztools.ui.screens.spark.SparkViewModel
 import com.muzermat.muztools.ui.screens.td.TdScreen
 import com.muzermat.muztools.ui.screens.td.TdViewModel
+import com.muzermat.muztools.ui.screens.tibo.TiboScreen
+import com.muzermat.muztools.ui.screens.tibo.TiboViewModel
 
 sealed class Screen(val route: String) {
     object Auth : Screen("auth")
@@ -54,6 +56,7 @@ fun AppNavigation(
     signinViewModel: SigninViewModel,
     tdViewModel: TdViewModel,
     sparkViewModel: SparkViewModel,
+    tiboViewModel: TiboViewModel,
     profileViewModel: ProfileViewModel
 ) {
     val navController = rememberNavController()
@@ -92,6 +95,7 @@ fun AppNavigation(
                 signinViewModel = signinViewModel,
                 tdViewModel = tdViewModel,
                 sparkViewModel = sparkViewModel,
+                tiboViewModel = tiboViewModel,
                 profileViewModel = profileViewModel
             )
         }
@@ -105,6 +109,7 @@ fun MainContainer(
     signinViewModel: SigninViewModel,
     tdViewModel: TdViewModel,
     sparkViewModel: SparkViewModel,
+    tiboViewModel: TiboViewModel,
     profileViewModel: ProfileViewModel
 ) {
     val tabNavController = rememberNavController()
@@ -137,12 +142,15 @@ fun MainContainer(
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         onClick = {
+                            // Bottom tabs always return to their root page. Do not
+                            // restore a previously opened feature detail screen.
                             tabNavController.navigate(tab.route) {
-                                popUpTo(tabNavController.graph.findStartDestination().id) {
-                                    saveState = true
+                                popUpTo(BottomTab.Home.route) {
+                                    inclusive = false
+                                    saveState = false
                                 }
                                 launchSingleTop = true
-                                restoreState = true
+                                restoreState = false
                             }
                         }
                     )
@@ -169,12 +177,13 @@ fun MainContainer(
                     onOpenSignin = { tabNavController.navigate("feature/signin") },
                     onOpenTd = { tabNavController.navigate("feature/td") },
                     onOpenSpark = { tabNavController.navigate("feature/spark") },
-                    onRequest = { signinViewModel.requestFeature(it) }
+                    onOpenTibo = { tabNavController.navigate("feature/tibo") }
                 )
             }
             composable("feature/signin") { SigninScreen(viewModel = signinViewModel) }
             composable("feature/td") { TdScreen(viewModel = tdViewModel) }
             composable("feature/spark") { SparkScreen(viewModel = sparkViewModel) }
+            composable("feature/tibo") { TiboScreen(viewModel = tiboViewModel) }
             composable(BottomTab.Profile.route) {
                 ProfileScreen(
                     viewModel = profileViewModel,

@@ -7,6 +7,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -20,6 +22,8 @@ import com.muzermat.muztools.ui.screens.profile.ProfileViewModel
 import com.muzermat.muztools.ui.screens.signin.SigninViewModel
 import com.muzermat.muztools.ui.screens.spark.SparkViewModel
 import com.muzermat.muztools.ui.screens.td.TdViewModel
+import com.muzermat.muztools.ui.screens.tibo.TiboViewModel
+import com.muzermat.muztools.service.MuzNotificationService
 import com.muzermat.muztools.ui.theme.MuzToolsTheme
 import com.muzermat.muztools.update.UpdateDialog
 import com.muzermat.muztools.update.UpdateViewModel
@@ -35,7 +39,7 @@ class MainActivity : ComponentActivity() {
         object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 @Suppress("UNCHECKED_CAST")
-                return AuthViewModel(app.apiClient, app.preferencesManager) as T
+                return AuthViewModel(app.apiClient, app.preferencesManager, app::refreshFcmRegistration) as T
             }
         }
     }
@@ -80,6 +84,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val tiboViewModel: TiboViewModel by viewModels {
+        val app = application as MuzApplication
+        object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                @Suppress("UNCHECKED_CAST")
+                return TiboViewModel(app.apiClient) as T
+            }
+        }
+    }
+
     private val updateViewModel: UpdateViewModel by viewModels {
         val app = application as MuzApplication
         object : ViewModelProvider.Factory {
@@ -112,13 +126,19 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MuzToolsTheme {
+                val authState by authViewModel.uiState.collectAsState()
                 LaunchedEffect(Unit) { updateViewModel.check() }
+                LaunchedEffect(authState.isLoggedIn) {
+                    if (authState.isLoggedIn) MuzNotificationService.start(this@MainActivity)
+                    else MuzNotificationService.stop(this@MainActivity)
+                }
                 AppNavigation(
                     authViewModel = authViewModel,
                     homeViewModel = homeViewModel,
                     signinViewModel = signinViewModel,
                     tdViewModel = tdViewModel,
                     sparkViewModel = sparkViewModel,
+                    tiboViewModel = tiboViewModel,
                     profileViewModel = profileViewModel
                 )
                 UpdateDialog(updateViewModel)

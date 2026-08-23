@@ -23,7 +23,11 @@ data class SigninUiState(
     val isAutoSigninEnabled: Boolean = false,
     val scheduleItems: List<SigninScheduleItem> = emptyList(),
     val isBinding: Boolean = false,
-    val isTogglingAuto: Boolean = false
+    val isTogglingAuto: Boolean = false,
+    val canManageInvites: Boolean = false,
+    val issuedInviteCode: String = "",
+    val inviteRemaining: Int = 0,
+    val isIssuingInvite: Boolean = false
 )
 
 class SigninViewModel(
@@ -44,17 +48,22 @@ class SigninViewModel(
 
             val studentDeferred = async { apiClient.getStudentStatus() }
             val scheduleDeferred = async { apiClient.getSigninSchedule() }
+            val userDeferred = async { apiClient.getMe() }
 
             val studentRes = studentDeferred.await()
             val scheduleRes = scheduleDeferred.await()
+            val userRes = userDeferred.await()
 
             _uiState.update { current ->
+                val student = studentRes.getOrNull()
+                val schedule = scheduleRes.getOrNull()
                 current.copy(
                     isLoading = false,
                     isRefreshing = false,
-                    studentStatus = studentRes.getOrDefault(current.studentStatus),
-                    scheduleItems = scheduleRes.map { it.schedule }.getOrDefault(current.scheduleItems),
-                    isAutoSigninEnabled = scheduleRes.map { it.enabled }.getOrDefault(current.isAutoSigninEnabled)
+                    studentStatus = student ?: current.studentStatus,
+                    scheduleItems = schedule?.schedule ?: current.scheduleItems,
+                    isAutoSigninEnabled = schedule?.enabled ?: student?.autoSignin ?: current.isAutoSigninEnabled,
+                    canManageInvites = userRes.getOrNull()?.canManageInvites ?: current.canManageInvites
                 )
             }
         }
@@ -82,39 +91,38 @@ class SigninViewModel(
         }
     }
 
-    fun requestFeature(feature: String) {
+    fun issueInvite() {
         viewModelScope.launch {
-            val res = apiClient.requestFeature(feature)
-            res.fold(
-                onSuccess = { resp ->
-                    _messageFlow.emit(resp.message ?: "已提交申请")
-                    loadData(isRefresh = true)
+            _uiState.update { it.copy(isIssuingInvite = true) }
+            apiClient.issueInvite().fold(
+                onSuccess = { result ->
+                    _uiState.update { it.copy(isIssuingInvite = false, issuedInviteCode = result.code, inviteRemaining = result.remaining) }
                 },
-                onFailure = { err ->
-                    _messageFlow.emit(err.message ?: "申请失败")
+                onFailure = { error ->
+                    _uiState.update { it.copy(isIssuingInvite = false) }
+                    _messageFlow.emit("获取邀请码失败: ${error.message}")
                 }
             )
         }
     }
 
+    fun clearIssuedInvite() {
+        _uiState.update { it.copy(issuedInviteCode = "") }
+    }
+
     fun toggleAutoSignin(enable: Boolean) {
-        val currentStatus = _uiState.value.studentStatus.signinStatus.ifBlank { _uiState.value.studentStatus.approvals.signin }
-        val isApproved = currentStatus == "approved" || currentStatus == "已通过"
-
-        if (enable && !isApproved) {
-            viewModelScope.launch {
-                _messageFlow.emit("学生认证未通过，审批完成后方可开启自动签到")
-            }
-            return
-        }
-
         viewModelScope.launch {
             _uiState.update { it.copy(isTogglingAuto = true) }
             val res = apiClient.setAutoSignin(enable)
             _uiState.update { it.copy(isTogglingAuto = false) }
             res.fold(
                 onSuccess = { resp ->
-                    _uiState.update { it.copy(isAutoSigninEnabled = enable) }
+                    _uiState.update {
+                        it.copy(
+                            isAutoSigninEnabled = enable,
+                            studentStatus = it.studentStatus.copy(autoSignin = enable)
+                        )
+                    }
                     _messageFlow.emit(if (enable) "自动签到已开启" else "自动签到已关闭")
                 },
                 onFailure = { err ->

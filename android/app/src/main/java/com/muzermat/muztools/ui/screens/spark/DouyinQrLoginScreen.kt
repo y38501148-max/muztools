@@ -55,7 +55,7 @@ fun DouyinQrLoginScreen(
     }
     val hint = when {
         status == "success" -> "登录成功"
-        status == "scanned" -> "已扫码，请在抖音 App 中确认"
+        status == "scanned" -> error.ifBlank { "已扫码，请在抖音 App 中确认" }
         status == "expired" -> error.ifBlank { "二维码已过期，请刷新" }
         status == "failed" || status == "cancelled" -> error.ifBlank { "登录失败，请重试" }
         bitmap == null -> "正在生成二维码…"
@@ -107,7 +107,7 @@ fun DouyinQrLoginScreen(
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center
             )
-            if (error.isNotBlank() && status != "expired") {
+            if (error.isNotBlank() && status !in listOf("expired", "scanned")) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = error,
