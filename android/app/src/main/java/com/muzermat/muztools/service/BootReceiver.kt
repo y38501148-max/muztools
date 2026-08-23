@@ -7,10 +7,7 @@ import com.muzermat.muztools.data.local.PreferencesManager
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action == Intent.ACTION_BOOT_COMPLETED &&
-            !PreferencesManager(context).token.isNullOrBlank() &&
-            NotificationAccess.isEnabled(context)
-        ) {
+        if (intent?.action == Intent.ACTION_BOOT_COMPLETED && !PreferencesManager(context).token.isNullOrBlank()) {
             MuzNotificationService.start(context)
         }
     }
