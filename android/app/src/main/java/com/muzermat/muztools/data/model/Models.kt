@@ -195,6 +195,8 @@ data class DouyinSessionState(
     @SerialName("last_run") val lastRun: String = "",
     @SerialName("last_auto_run") val lastAutoRun: String = "",
     @SerialName("last_auto_attempt") val lastAutoAttempt: String = "",
+    @SerialName("auto_scheduled_at") val autoScheduledAt: String = "",
+    @SerialName("auto_schedule_offset_minutes") val autoScheduleOffsetMinutes: Int = 0,
     @SerialName("auto_blocked_date") val autoBlockedDate: String = "",
     @SerialName("auto_blocked_reason") val autoBlockedReason: String = "",
     @SerialName("last_result") val lastResult: DouyinLastResult = DouyinLastResult(),

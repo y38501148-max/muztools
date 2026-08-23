@@ -17,17 +17,17 @@ def test_manual_run_does_not_block_automatic_run():
         "last_auto_run": "",
         "last_auto_attempt": "",
     }
-    assert scheduler_module.should_run_douyin_auto(cfg, dt(6, 0)) is True
+    assert scheduler_module.should_run_douyin_auto(cfg, dt(6, 0), jitter_offset=0) is True
 
 
 def test_successful_auto_run_blocks_duplicate_for_the_day():
     cfg = {"enabled": True, "hour": 6, "last_auto_run": dt(6, 2).isoformat()}
-    assert scheduler_module.should_run_douyin_auto(cfg, dt(20, 0)) is False
+    assert scheduler_module.should_run_douyin_auto(cfg, dt(20, 0), jitter_offset=0) is False
 
 
 def test_missed_exact_minute_is_caught_up_later():
     cfg = {"enabled": True, "hour": 6, "last_auto_run": "", "last_auto_attempt": ""}
-    assert scheduler_module.should_run_douyin_auto(cfg, dt(6, 37)) is True
+    assert scheduler_module.should_run_douyin_auto(cfg, dt(6, 37), jitter_offset=0) is True
 
 
 def test_failed_attempt_waits_before_retry():
@@ -37,8 +37,38 @@ def test_failed_attempt_waits_before_retry():
         "last_auto_run": "",
         "last_auto_attempt": dt(6, 5).isoformat(),
     }
-    assert scheduler_module.should_run_douyin_auto(cfg, dt(6, 14)) is False
-    assert scheduler_module.should_run_douyin_auto(cfg, dt(6, 15)) is True
+    assert scheduler_module.should_run_douyin_auto(cfg, dt(6, 14), jitter_offset=0) is False
+    assert scheduler_module.should_run_douyin_auto(cfg, dt(6, 15), jitter_offset=0) is True
+
+
+def test_auto_spark_uses_stable_daily_random_offset():
+    cfg = {"enabled": True, "hour": 6, "last_auto_run": "", "last_auto_attempt": ""}
+    scheduled = scheduler_module.ensure_douyin_auto_schedule(cfg, dt(5, 50), jitter_offset=4)
+    assert scheduled == dt(6, 4)
+    assert cfg["auto_schedule_offset_minutes"] == 4
+    assert scheduler_module.should_run_douyin_auto(cfg, dt(6, 3), jitter_offset=-5) is False
+    # A later scheduler tick must reuse +4 rather than redraw -5.
+    assert scheduler_module.should_run_douyin_auto(cfg, dt(6, 4), jitter_offset=-5) is True
+    assert cfg["auto_schedule_offset_minutes"] == 4
+
+
+def test_auto_spark_draws_new_offset_on_next_day_or_hour_change():
+    cfg = {"enabled": True, "hour": 6}
+    first = scheduler_module.ensure_douyin_auto_schedule(cfg, dt(5), jitter_offset=-3)
+    assert first == dt(5, 57)
+    next_day = datetime(2026, 8, 24, 5, 0, tzinfo=TZ_BEIJING)
+    second = scheduler_module.ensure_douyin_auto_schedule(cfg, next_day, jitter_offset=5)
+    assert second == datetime(2026, 8, 24, 6, 5, tzinfo=TZ_BEIJING)
+    cfg["hour"] = 7
+    third = scheduler_module.ensure_douyin_auto_schedule(cfg, next_day, jitter_offset=-2)
+    assert third == datetime(2026, 8, 24, 6, 58, tzinfo=TZ_BEIJING)
+
+
+def test_auto_spark_jitter_does_not_cross_calendar_boundary():
+    midnight = {"enabled": True, "hour": 0}
+    end_of_day = {"enabled": True, "hour": 23}
+    assert scheduler_module.ensure_douyin_auto_schedule(midnight, dt(0), jitter_offset=-5) == dt(0)
+    assert scheduler_module.ensure_douyin_auto_schedule(end_of_day, dt(22), jitter_offset=5) == dt(23)
 
 
 def test_scheduler_runs_playwright_worker_off_asyncio_loop(monkeypatch):

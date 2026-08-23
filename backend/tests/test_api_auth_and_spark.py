@@ -614,6 +614,30 @@ def test_douyin_config_requires_stable_targets_and_enforces_limits(client_and_us
     assert client.put("/api/douyin/config", json={"default_message": "x" * 201}).status_code == 400
 
 
+def test_douyin_hour_change_clears_daily_random_schedule(client_and_user):
+    client, user = client_and_user
+    enable_admin_douyin(client, user)
+    user["douyin"].update({
+        "hour": 6,
+        "auto_schedule_date": "2026-08-23",
+        "auto_schedule_hour": 6,
+        "auto_schedule_offset_minutes": 4,
+        "auto_scheduled_at": "2026-08-23T06:04:00+08:00",
+    })
+    store.save_user(user)
+
+    response = client.put("/api/douyin/config", json={"hour": 7})
+    assert response.status_code == 200
+    saved = store.load_user(user["id"])
+    assert saved["douyin"]["hour"] == 7
+    assert "auto_scheduled_at" not in saved["douyin"]
+    assert "auto_schedule_offset_minutes" not in saved["douyin"]
+
+    midnight = client.put("/api/douyin/config", json={"hour": 0})
+    assert midnight.status_code == 200
+    assert store.load_user(user["id"])["douyin"]["hour"] == 0
+
+
 def test_manual_douyin_run_is_rate_limited(client_and_user, monkeypatch):
     client, user = client_and_user
     enable_admin_douyin(client, user)

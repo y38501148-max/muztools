@@ -198,8 +198,8 @@ fun SparkScreen(viewModel: SparkViewModel) {
                         HorizontalDivider(Modifier.padding(vertical = 12.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("执行时间", fontWeight = FontWeight.Medium)
-                                Text("每天 ${String.format("%02d:00", uiState.config.hour)}", style = MaterialTheme.typography.bodySmall)
+                                Text("基础执行时间", fontWeight = FontWeight.Medium)
+                                Text("每天 ${String.format("%02d:00", uiState.config.hour)} 前后 5 分钟内随机", style = MaterialTheme.typography.bodySmall)
                             }
                             Text(String.format("%02d:00", uiState.config.hour), fontWeight = FontWeight.Bold)
                         }
@@ -209,6 +209,17 @@ fun SparkScreen(viewModel: SparkViewModel) {
                             valueRange = 0f..23f,
                             steps = 22,
                             enabled = uiState.session.valid
+                        )
+                        Text(
+                            if (sessionState?.autoScheduledAt.isNullOrBlank()) {
+                                "今日随机时间将在调度器刷新后显示。"
+                            } else {
+                                val offset = sessionState?.autoScheduleOffsetMinutes ?: 0
+                                "今日实际计划：${formatSparkTimestamp(sessionState?.autoScheduledAt.orEmpty())}（相对整点${if (offset >= 0) "+" else ""}${offset} 分钟）"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
                         )
                         OutlinedTextField(
                             value = uiState.config.defaultMessage,

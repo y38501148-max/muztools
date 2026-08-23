@@ -1885,8 +1885,12 @@
         </div>
 
         <div class="input-group">
-          <label for="spark-hour">每日自动发送时间（整点，0~23）</label>
+          <label for="spark-hour">每日自动发送基础时间（整点，0~23）</label>
           <input type="number" id="spark-hour" min="0" max="23" value="${esc(dy.hour ?? 9)}" />
+          <p class="muted-sm" style="margin-top:6px;line-height:1.5;">
+            实际执行会在基础整点前后 5 分钟内每天随机一次并固定到当天。
+            ${dy.auto_scheduled_at ? `<br>今日计划：${esc(String(dy.auto_scheduled_at).replace("T", " ").split("+")[0].slice(0, 16))}（相对整点${Number(dy.auto_schedule_offset_minutes || 0) >= 0 ? "+" : ""}${Number(dy.auto_schedule_offset_minutes || 0)} 分钟）` : "今日随机时间将在调度器刷新后显示。"}
+          </p>
         </div>
 
         <div class="row-between" style="padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-bottom: 14px;">

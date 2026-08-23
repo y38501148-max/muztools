@@ -863,6 +863,10 @@ async def douyin_config(request: Request, payload: dict[str, Any] = Body(...), u
     _require_douyin_access(user)
     _rate_limit(request, "douyin-config", str(user.get("id") or ""), 30, 60)
     cfg = user.setdefault("douyin", {})
+    try:
+        previous_hour = max(0, min(int(cfg.get("hour", 9)), 23))
+    except (TypeError, ValueError):
+        previous_hour = 9
     if "enabled" in payload:
         cfg["enabled"] = bool(payload.get("enabled"))
     if "default_message" in payload:
@@ -871,7 +875,19 @@ async def douyin_config(request: Request, payload: dict[str, Any] = Body(...), u
             raise HTTPException(status_code=400, detail=f"默认文案不能超过 {MAX_MESSAGE_LENGTH} 个字符")
         cfg["default_message"] = default_message
     if "hour" in payload:
-        cfg["hour"] = max(0, min(int(payload.get("hour") or 9), 23))
+        try:
+            raw_hour = payload.get("hour")
+            cfg["hour"] = max(0, min(int(9 if raw_hour in (None, "") else raw_hour), 23))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="自动发送时间必须是 0 到 23 的整数") from exc
+        if cfg["hour"] != previous_hour:
+            for key in (
+                "auto_schedule_date",
+                "auto_schedule_hour",
+                "auto_schedule_offset_minutes",
+                "auto_scheduled_at",
+            ):
+                cfg.pop(key, None)
     if "targets" in payload:
         raw_targets = [item for item in (payload.get("targets") or []) if isinstance(item, dict)]
         if len(raw_targets) > MAX_SPARK_TARGETS:

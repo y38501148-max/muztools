@@ -131,6 +131,7 @@ muz-tool/
 - 每个用户只能有一个续火花执行实例；目标最多 10 个、消息最多 200 字，Cookie 导入、好友刷新、配置与手动执行均有限流。
 - 单目标测试发送只允许选择已经保存在配置中的稳定会话；`POST /api/douyin/run-target` 与完整手动执行共享每小时 3 次额度，并复用同一用户执行锁。
 - 自动任务按目标记录当日进度，只重试尚未成功且明确可重试的目标；安全验证、会话失效、页面结构变化、结果不明确或未分类错误均熔断当天任务。
+- 每日自动续火花在用户设置的基础整点前后 5 分钟内随机选择一次，并将当日实际时间、基础小时和偏移持久化；同一天服务重启或每分钟检查不得重新抽签。0 点和 23 点配置不得跨越北京时间日期边界。
 - 每次浏览器执行结束后保存刷新后的 Cookie；重新导入 Cookie 时关闭自动任务并清空旧目标，防止跨账号误发。
 
 ### Tibo 监测
@@ -178,7 +179,7 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.6 为 `versionCode 23`；v1.3.5 为 `versionCode 22`。
+发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.7 为 `versionCode 24`；v1.3.6 为 `versionCode 23`。
 
 ## 服务端部署
 
@@ -211,14 +212,14 @@ ssh server2 'cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data .ven
 ## Android 热更新
 
 ```bash
-cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.6.apk
-scp release/muztools-1.3.6.apk server2:/tmp/
+cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.7.apk
+scp release/muztools-1.3.7.apk server2:/tmp/
 ssh server2 \
   "cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data \
-   .venv/bin/muz-admin set-version 1.3.6 --code 23 \
-   --title 'MuzTool v1.3.6' \
-   --message '新增单个好友续火花测试发送，并保持双端安全限制' \
-   --apk /tmp/muztools-1.3.6.apk"
+   .venv/bin/muz-admin set-version 1.3.7 --code 24 \
+   --title 'MuzTool v1.3.7' \
+   --message '续火花每日执行时间增加前后 5 分钟随机偏移' \
+   --apk /tmp/muztools-1.3.7.apk"
 ```
 
 除非用户明确要求，不使用 `--force`，也不提高 `min_version_code`。

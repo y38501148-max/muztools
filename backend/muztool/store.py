@@ -342,6 +342,8 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
             "last_run": user.get("douyin", {}).get("last_run", ""),
             "last_auto_run": user.get("douyin", {}).get("last_auto_run", ""),
             "last_auto_attempt": user.get("douyin", {}).get("last_auto_attempt", ""),
+            "auto_scheduled_at": user.get("douyin", {}).get("auto_scheduled_at", ""),
+            "auto_schedule_offset_minutes": user.get("douyin", {}).get("auto_schedule_offset_minutes", 0),
             "auto_blocked_date": user.get("douyin", {}).get("auto_blocked_date", ""),
             "auto_blocked_reason": user.get("douyin", {}).get("auto_blocked_reason", ""),
             "last_result": user.get("douyin", {}).get("last_result", {}),

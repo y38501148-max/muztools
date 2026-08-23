@@ -16,6 +16,7 @@ from .store import can_use_douyin, iter_users, save_user, student_runtime
 scheduler = AsyncIOScheduler(timezone=TZ_BEIJING)
 logger = logging.getLogger(__name__)
 AUTO_SPARK_RETRY_INTERVAL = timedelta(minutes=10)
+AUTO_SPARK_JITTER_MINUTES = 5
 
 
 def _auto_signin_users() -> list[dict[str, Any]]:
@@ -36,7 +37,54 @@ def _parse_beijing_iso(value: Any) -> datetime | None:
     return parsed.astimezone(TZ_BEIJING)
 
 
-def should_run_douyin_auto(cfg: dict[str, Any], now: datetime | None = None) -> bool:
+def ensure_douyin_auto_schedule(
+    cfg: dict[str, Any],
+    now: datetime | None = None,
+    *,
+    jitter_offset: int | None = None,
+) -> datetime:
+    """Return and persist today's stable randomized automatic send time.
+
+    The offset is selected once per Beijing calendar day and base hour. It is
+    then reused by every minute-level scheduler check, so the due time cannot
+    drift while the process is running or after a service restart.
+    """
+    current = (now or datetime.now(TZ_BEIJING)).astimezone(TZ_BEIJING)
+    try:
+        hour = max(0, min(int(cfg.get("hour", 9)), 23))
+    except (TypeError, ValueError):
+        hour = 9
+    today = current.date().isoformat()
+    stored = _parse_beijing_iso(cfg.get("auto_scheduled_at"))
+    try:
+        stored_hour = int(cfg.get("auto_schedule_hour"))
+    except (TypeError, ValueError):
+        stored_hour = -1
+    if cfg.get("auto_schedule_date") == today and stored_hour == hour and stored is not None:
+        return stored
+
+    # Avoid crossing a calendar-day boundary because progress and safety-stop
+    # state are intentionally keyed by Beijing date.
+    minimum = 0 if hour == 0 else -AUTO_SPARK_JITTER_MINUTES
+    maximum = 0 if hour == 23 else AUTO_SPARK_JITTER_MINUTES
+    if jitter_offset is None:
+        offset = random.randint(minimum, maximum)
+    else:
+        offset = max(minimum, min(int(jitter_offset), maximum))
+    scheduled_at = current.replace(hour=hour, minute=0, second=0, microsecond=0) + timedelta(minutes=offset)
+    cfg["auto_schedule_date"] = today
+    cfg["auto_schedule_hour"] = hour
+    cfg["auto_schedule_offset_minutes"] = offset
+    cfg["auto_scheduled_at"] = scheduled_at.isoformat(timespec="seconds")
+    return scheduled_at
+
+
+def should_run_douyin_auto(
+    cfg: dict[str, Any],
+    now: datetime | None = None,
+    *,
+    jitter_offset: int | None = None,
+) -> bool:
     """Return whether today's automatic spark task is due.
 
     Manual runs only update ``last_run`` and intentionally do not affect this
@@ -45,11 +93,7 @@ def should_run_douyin_auto(cfg: dict[str, Any], now: datetime | None = None) -> 
     current = (now or datetime.now(TZ_BEIJING)).astimezone(TZ_BEIJING)
     if not cfg.get("enabled"):
         return False
-    try:
-        hour = max(0, min(int(cfg.get("hour", 9)), 23))
-    except (TypeError, ValueError):
-        hour = 9
-    scheduled_at = current.replace(hour=hour, minute=0, second=0, microsecond=0)
+    scheduled_at = ensure_douyin_auto_schedule(cfg, current, jitter_offset=jitter_offset)
     if current < scheduled_at:
         return False
 
@@ -142,7 +186,22 @@ async def douyin_hourly() -> None:
                 save_user(user)
             continue
         now = datetime.now(TZ_BEIJING)
-        if not should_run_douyin_auto(cfg, now):
+        schedule_before = (
+            cfg.get("auto_schedule_date"),
+            cfg.get("auto_schedule_hour"),
+            cfg.get("auto_schedule_offset_minutes"),
+            cfg.get("auto_scheduled_at"),
+        )
+        due = should_run_douyin_auto(cfg, now)
+        schedule_after = (
+            cfg.get("auto_schedule_date"),
+            cfg.get("auto_schedule_hour"),
+            cfg.get("auto_schedule_offset_minutes"),
+            cfg.get("auto_scheduled_at"),
+        )
+        if schedule_after != schedule_before:
+            save_user(user)
+        if not due:
             continue
 
         today = now.date().isoformat()

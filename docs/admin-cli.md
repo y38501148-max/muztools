@@ -15,10 +15,10 @@ MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin enable-signin <user>
 发布客户端版本：
 
 ```bash
-MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin set-version 1.3.6 \
-  --code 23 --title 'MuzTool v1.3.6' \
-  --message '新增单个好友续火花测试发送，并保持双端安全限制' \
-  --apk /tmp/muztools-1.3.6.apk
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin set-version 1.3.7 \
+  --code 24 --title 'MuzTool v1.3.7' \
+  --message '续火花每日执行时间增加前后 5 分钟随机偏移' \
+  --apk /tmp/muztools-1.3.7.apk
 ```
 
 不要在命令输出或日志中打印密码、Cookie、Token 或邀请码正文。
