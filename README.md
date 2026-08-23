@@ -1,6 +1,6 @@
 # MuzTool（盐的工具箱）
 
-MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的个人工具箱。当前版本为 **v1.3.1**。
+MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的个人工具箱。当前版本为 **v1.3.2**。
 
 ## v1.3.0 主要能力
 
@@ -65,20 +65,20 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-v1.3.1 使用：
+v1.3.2 使用：
 
-- `versionName = "1.3.1"`
-- `versionCode = 18`
+- `versionName = "1.3.2"`
+- `versionCode = 19`
 
 ## 热更新发布
 
 ```bash
 muz-admin version
-muz-admin set-version 1.3.1 \
-  --code 17 \
-  --title "MuzTool v1.3.0" \
+muz-admin set-version 1.3.2 \
+  --code 19 \
+  --title "MuzTool v1.3.2" \
   --message "FCM 后台推送、邀请码注册与凭据加密" \
-  --apk /path/to/muztools-1.3.1.apk
+  --apk /path/to/muztools-1.3.2.apk
 ```
 
 完整开发、测试、部署和双端同步要求见 `AGENTS.md`；管理命令说明见 `MUZ-ADMIN.md`。

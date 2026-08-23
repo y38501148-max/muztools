@@ -18,7 +18,6 @@ backend/.venv/
 backend/.pytest_cache/
 backend/muztools.egg-info/
 *.egg-info/
-
 # Secrets and runtime data
 .env
 .env.*
@@ -26,7 +25,6 @@ backend/.env
 backend/data/
 **/secret.key
 **/photos/
-
 # Android build / local SDK
 android/.gradle/
 android/.kotlin/
@@ -42,6 +40,9 @@ android/captures/
 *.ap_
 release/
 !release/.gitkeep
-
 # Gradle wrapper jar is source; local caches are not
 .gradle/
+# Firebase local configuration
+android/app/google-services.json
+/muztool-*-firebase-adminsdk-*.json
+/firebase-service-account.json
