@@ -68,6 +68,15 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
+def _post(url: str, **kwargs: Any) -> httpx.Response:
+    """POST through the dedicated FCM proxy when one is configured."""
+    client_kwargs: dict[str, Any] = {"timeout": kwargs.pop("timeout", 15)}
+    if config.FCM_PROXY:
+        client_kwargs["proxy"] = config.FCM_PROXY
+    with httpx.Client(**client_kwargs) as client:
+        return client.post(url, **kwargs)
+
+
 def _access_token_for(credentials: dict[str, Any]) -> str | None:
     global _access_token
     now = int(time.time())
@@ -86,7 +95,7 @@ def _access_token_for(credentials: dict[str, Any]) -> str | None:
     signature = pkcs1_15.new(key).sign(SHA256.new(unsigned))
     assertion = f"{header}.{claims}.{_b64url(signature)}"
     try:
-        response = httpx.post(
+        response = _post(
             "https://oauth2.googleapis.com/token",
             content=urlencode({
                 "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
@@ -165,7 +174,7 @@ def _send_one(credentials: dict[str, Any], token: str, data: dict[str, str]) -> 
         }
     }
     try:
-        response = httpx.post(
+        response = _post(
             f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send",
             json=payload,
             headers={"Authorization": f"Bearer {access_token}"},

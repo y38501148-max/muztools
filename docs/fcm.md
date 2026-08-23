@@ -18,6 +18,8 @@ MuzTool v1.3.2 完成 Firebase Cloud Messaging（FCM）通道。FCM 使用 Andro
 ```text
 MUZTOOLS_FCM_CREDENTIALS=/root/muz-tool/data/firebase-service-account.json
 MUZTOOLS_FCM_PROJECT_ID=你的 Firebase project ID
+# 中国大陆服务器无法直连 Google 时可单独为 FCM 指定代理
+MUZTOOLS_FCM_PROXY=http://127.0.0.1:7890
 ```
 
 随后重启服务：

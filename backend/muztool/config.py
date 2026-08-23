@@ -21,6 +21,7 @@ VAULT_KEY_FILE = DATA_DIR / "vault.key"
 RSA_PRIVATE_KEY_FILE = DATA_DIR / "transport_rsa.pem"
 FCM_CREDENTIALS_FILE = os.environ.get("MUZTOOLS_FCM_CREDENTIALS", "").strip()
 FCM_PROJECT_ID = os.environ.get("MUZTOOLS_FCM_PROJECT_ID", "").strip()
+FCM_PROXY = os.environ.get("MUZTOOLS_FCM_PROXY", "").strip()
 
 
 def ensure_dirs() -> None:
