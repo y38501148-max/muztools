@@ -1,6 +1,6 @@
 # FCM 后台推送配置
 
-MuzTool v1.3.3 完成 Firebase Cloud Messaging（FCM）通道。FCM 使用 Android 系统级推送服务，应用进程被系统回收后仍可以投递通知；WebSocket 和本地通知历史仍保留作为回退。
+MuzTool v1.3.3 已接入 Firebase Cloud Messaging（FCM）客户端和服务端代码，但“代码已接入”不等于“关闭应用后一定能够收到通知”。只有 Android 成功获取并向后端注册 FCM Token、系统通知权限已开启、设备能够连接 Google 推送服务，并完成真实设备测试后，才能确认该设备的 FCM 链路可用。当前已经实际验证的回退链路是 WebSocket/前台服务，使用时需要让应用保持在后台。
 
 ## 必需文件
 
@@ -47,4 +47,12 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-只有同时配置 Android Firebase 项目和服务端 Admin SDK 凭据后，才是完整的“关闭应用后系统推送”链路。
+同时配置 Android Firebase 项目和服务端 Admin SDK 凭据只是建立 FCM 链路的前提，还必须验证以下状态：
+
+1. Android 系统已经允许 MuzTool 发送通知；
+2. 客户端成功取得 FCM Token；
+3. `POST /api/devices/fcm` 注册成功；
+4. 服务端用户数据中存在加密保存的 FCM 设备记录；
+5. 应用退到后台和进程被回收后，真实设备均能收到测试消息。
+
+中国大陆网络环境下，服务器配置代理只解决“服务端到 Google”的请求，不能保证“Google 到用户手机”的链路可用。未完成以上真实设备验证时，发布说明不得宣称已经实现关闭应用推送；应继续使用 WebSocket/前台服务，并让应用保持在后台。
