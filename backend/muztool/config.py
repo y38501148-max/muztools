@@ -26,4 +26,6 @@ FCM_PROXY = os.environ.get("MUZTOOLS_FCM_PROXY", "").strip()
 
 def ensure_dirs() -> None:
     for name in ("users", "sessions", "photos", "notifications", "tmp"):
-        (DATA_DIR / name).mkdir(parents=True, exist_ok=True)
+        path = DATA_DIR / name
+        path.mkdir(parents=True, exist_ok=True)
+        path.chmod(0o700)

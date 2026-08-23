@@ -1,8 +1,17 @@
+import sys
+import types
+
 import pytest
 
 from muztool.douyin import (
+    DouyinAmbiguousSend,
+    DouyinBusy,
+    DouyinStructureChanged,
+    _execution_guard,
     _conversation_friend,
+    _send_and_confirm,
     _target_matches,
+    _verify_active_conversation,
     message_for,
     normalize_target,
     run_spark,
@@ -101,7 +110,7 @@ def test_target_matching_prefers_id_and_type():
     direct = {"name": "同名会话", "conversation_id": "d1", "conversation_type": "direct"}
     assert _target_matches({"name": "同名会话", "conversation_id": "g1", "conversation_type": "group"}, group)
     assert not _target_matches({"name": "同名会话", "conversation_id": "g1", "conversation_type": "group"}, direct)
-    assert _target_matches({"name": "同名会话", "conversation_type": "group"}, group)
+    assert not _target_matches({"name": "同名会话", "conversation_type": "group"}, group)
     assert not _target_matches({"name": "同名会话", "conversation_type": "group"}, direct)
 
 
@@ -121,7 +130,7 @@ def test_group_only_guard_rejects_any_non_group_or_multiple_target():
             ],
             group_only=True,
         )
-    with pytest.raises(ValueError, match="明确的群聊标识"):
+    with pytest.raises(ValueError, match="明确的群聊"):
         run_spark(
             user,
             targets_override=[{"name": "单聊", "conversation_id": "d1", "conversation_type": "direct"}],
@@ -144,3 +153,176 @@ def test_search_friends_filters_crawled_list(monkeypatch):
         {"name": "小李同学", "avatar_url": "", "conversation_id": "g1", "conversation_type": "group"}
     ]
     assert len(douyin.search_douyin_friends([{"name": "x"}])) == 2
+
+
+def test_per_user_execution_guard_rejects_overlapping_tasks():
+    with _execution_guard("same-user"):
+        with pytest.raises(DouyinBusy):
+            with _execution_guard("same-user"):
+                pass
+        with _execution_guard("different-user"):
+            pass
+
+
+class _FakeActiveLocator:
+    first = None
+
+    def __init__(self):
+        self.first = self
+
+    def wait_for(self, **_kwargs):
+        return None
+
+
+class _FakeActivePage:
+    def locator(self, _selector):
+        return _FakeActiveLocator()
+
+
+def test_active_conversation_requires_stable_identity(monkeypatch):
+    import muztool.douyin as douyin
+
+    monkeypatch.setattr(douyin, "_conversation_friend", lambda _item: {"name": "目标", "conversation_id": "", "conversation_type": ""})
+    with pytest.raises(DouyinStructureChanged):
+        _verify_active_conversation(
+            _FakeActivePage(),
+            {"name": "目标", "conversation_id": "d1", "conversation_type": "direct"},
+        )
+
+
+def test_active_conversation_rejects_mismatched_id(monkeypatch):
+    import muztool.douyin as douyin
+
+    monkeypatch.setattr(
+        douyin,
+        "_conversation_friend",
+        lambda _item: {"name": "目标", "conversation_id": "d2", "conversation_type": "direct"},
+    )
+    with pytest.raises(DouyinAmbiguousSend):
+        _verify_active_conversation(
+            _FakeActivePage(),
+            {"name": "目标", "conversation_id": "d1", "conversation_type": "direct"},
+        )
+
+
+class _FakeEditor:
+    def click(self):
+        return None
+
+    def inner_text(self):
+        return ""
+
+
+class _FakeKeyboard:
+    def insert_text(self, _text):
+        return None
+
+    def press(self, _key):
+        return None
+
+
+class _FakeExactText:
+    def __init__(self, counts):
+        self.counts = list(counts)
+        self.index = 0
+
+    def count(self):
+        value = self.counts[min(self.index, len(self.counts) - 1)]
+        self.index += 1
+        return value
+
+
+class _FakeSendPage:
+    def __init__(self, counts):
+        self.keyboard = _FakeKeyboard()
+        self.exact = _FakeExactText(counts)
+
+    def get_by_text(self, _text, exact=True):
+        assert exact is True
+        return self.exact
+
+    def wait_for_timeout(self, _milliseconds):
+        return None
+
+
+def test_send_confirmation_requires_message_count_increase(monkeypatch):
+    import muztool.douyin as douyin
+
+    block_checks = []
+    monkeypatch.setattr(douyin, "_detect_page_block", lambda _page: block_checks.append(1) or None)
+    _send_and_confirm(_FakeSendPage([2, 2, 3]), _FakeEditor(), "续火花")
+    assert block_checks == []
+
+
+def test_ambiguous_send_checks_page_block_once_then_stops(monkeypatch):
+    import muztool.douyin as douyin
+
+    block_checks = []
+    monkeypatch.setattr(douyin, "_detect_page_block", lambda _page: block_checks.append(1) or None)
+    with pytest.raises(DouyinAmbiguousSend):
+        _send_and_confirm(_FakeSendPage([2]), _FakeEditor(), "续火花")
+    assert block_checks == [1]
+
+
+def test_successful_run_persists_refreshed_cookies_and_records_status(monkeypatch):
+    import muztool.douyin as douyin
+
+    initial = [{"name": "sessionid", "value": "old", "domain": ".douyin.com", "path": "/"}]
+    refreshed = [{"name": "sessionid", "value": "new", "domain": ".douyin.com", "path": "/"}]
+    persisted = []
+    monkeypatch.setattr(douyin, "get_douyin_cookies", lambda _cfg: initial)
+    monkeypatch.setattr(douyin, "set_douyin_cookies", lambda _cfg, cookies: persisted.append(cookies))
+
+    class FakeContext:
+        def cookies(self):
+            return refreshed
+
+        def close(self):
+            return None
+
+    class FakeBrowser:
+        def close(self):
+            return None
+
+    class FakeChromium:
+        def launch(self, **_kwargs):
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+    class FakeSyncPlaywright:
+        def __enter__(self):
+            return FakePlaywright()
+
+        def __exit__(self, *_args):
+            return False
+
+    playwright_package = types.ModuleType("playwright")
+    sync_api_module = types.ModuleType("playwright.sync_api")
+    sync_api_module.sync_playwright = lambda: FakeSyncPlaywright()
+    playwright_package.sync_api = sync_api_module
+    monkeypatch.setitem(sys.modules, "playwright", playwright_package)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api_module)
+    monkeypatch.setattr(douyin, "_open_chat", lambda _browser, _cookies: (FakeContext(), object(), object()))
+    monkeypatch.setattr(
+        douyin,
+        "_open_target_conversation",
+        lambda _page, target: (object(), {"conversation_id": target["conversation_id"], "conversation_type": target["conversation_type"]}),
+    )
+    monkeypatch.setattr(douyin, "_send_and_confirm", lambda *_args: None)
+
+    user = {
+        "id": "run-user",
+        "douyin": {
+            "default_message": "续火花",
+            "targets": [{"name": "目标", "conversation_id": "d1", "conversation_type": "direct"}],
+        },
+    }
+    result = run_spark(user)
+    assert result["success"] is True
+    assert result["retryable"] is False
+    assert persisted == [refreshed]
+    assert user["douyin"]["target_status"]["id:d1"]["status"] == "success"
+    assert user["douyin"]["last_result"]["success_count"] == 1
+    assert user["douyin"]["last_result"]["failure_count"] == 0

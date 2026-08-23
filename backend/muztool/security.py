@@ -79,6 +79,43 @@ def decrypt_transport_payload(payload: dict[str, Any], fields: tuple[str, ...]) 
     return {field: decrypt_transport_value(encrypted.get(field)) for field in fields}
 
 
+
+def decrypt_hybrid_secret(payload: dict[str, Any], field: str = "encrypted_secret", max_plaintext: int = 262_144) -> str:
+    """Decrypt an RSA-wrapped AES-256-GCM envelope.
+
+    The RSA key protects only the random AES key, so large secrets such as a
+    browser cookie export never exceed the RSA block size.
+    """
+    envelope = payload.get(field)
+    if not isinstance(envelope, dict):
+        raise ValueError("此接口仅接受加密凭据，请更新客户端后重试")
+    try:
+        encrypted_key = base64.b64decode(str(envelope.get("key") or ""), validate=True)
+        nonce = base64.b64decode(str(envelope.get("nonce") or ""), validate=True)
+        sealed = base64.b64decode(str(envelope.get("ciphertext") or ""), validate=True)
+    except Exception as exc:
+        raise ValueError("加密凭据格式无效") from exc
+    if len(encrypted_key) != _rsa_private_key().size_in_bytes() or len(nonce) != 12 or len(sealed) < 16:
+        raise ValueError("加密凭据格式无效")
+    sentinel = get_random_bytes(32)
+    aes_key = PKCS1_v1_5.new(_rsa_private_key()).decrypt(encrypted_key, sentinel)
+    if aes_key == sentinel or len(aes_key) != 32:
+        raise ValueError("加密凭据解密失败，请刷新页面后重试")
+    ciphertext, tag = sealed[:-16], sealed[-16:]
+    if len(ciphertext) > max_plaintext:
+        raise ValueError("加密凭据过长")
+    try:
+        plaintext = AES.new(aes_key, AES.MODE_GCM, nonce=nonce).decrypt_and_verify(ciphertext, tag)
+        if len(plaintext) > max_plaintext:
+            raise ValueError("加密凭据过长")
+        return plaintext.decode("utf-8")
+    except ValueError as exc:
+        if str(exc) == "加密凭据过长":
+            raise
+        raise ValueError("加密凭据校验失败，请重新提交") from exc
+    except UnicodeDecodeError as exc:
+        raise ValueError("加密凭据编码无效") from exc
+
 def encrypt_secret(value: str) -> str:
     if not value:
         return ""

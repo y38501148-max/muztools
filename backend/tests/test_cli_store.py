@@ -79,3 +79,40 @@ def test_legacy_student_password_migrates_to_encrypted_storage():
     assert "CampusSecret1" not in contents
     assert '"password"' not in contents
     assert store.get_student_password(migrated["student"]) == "CampusSecret1"
+
+
+def test_legacy_douyin_secrets_migrate_and_user_file_is_private(isolated_data):
+    user = store.create_user("muzermat", "Secret1", "Admin")
+    raw = store.load_user(user["id"])
+    raw["douyin"].pop("cookies_encrypted", None)
+    raw["douyin"]["cookies"] = [
+        {"name": "sessionid", "value": "legacy-cookie-secret", "domain": ".douyin.com", "path": "/"}
+    ]
+    raw["douyin"]["friends_cache"] = [
+        {"name": "private-friend-name", "conversation_id": "d1", "conversation_type": "direct"}
+    ]
+    store._locked_write(store.user_path(user["id"]), raw)
+
+    migrated = store.load_user(user["id"])
+    contents = store.user_path(user["id"]).read_text(encoding="utf-8")
+    persisted = json.loads(contents)
+    assert "legacy-cookie-secret" not in contents
+    assert "private-friend-name" not in contents
+    assert "cookies" not in persisted["douyin"]
+    assert "friends_cache" not in persisted["douyin"]
+    assert migrated["douyin"]["cookies_encrypted"].startswith("v1:")
+    assert migrated["douyin"]["friends_cache_encrypted"].startswith("v1:")
+    assert store.get_douyin_cookies(migrated["douyin"])[0]["value"] == "legacy-cookie-secret"
+    assert store.get_douyin_friends_cache(migrated["douyin"])[0]["name"] == "private-friend-name"
+    assert store.user_path(user["id"]).stat().st_mode & 0o777 == 0o600
+    assert (isolated_data / "users").stat().st_mode & 0o777 == 0o700
+
+
+def test_nonadmin_douyin_auto_is_disabled_during_migration():
+    user = store.create_user("ordinary_1", "Secret1", "Ordinary")
+    user["douyin"]["enabled"] = True
+    store.save_user(user)
+    reloaded = store.load_user(user["id"])
+    assert reloaded["douyin"]["enabled"] is False
+    assert reloaded["douyin"]["disabled_reason"] == "temporary_admin_only"
+    assert store.public_user(reloaded)["can_use_douyin"] is False

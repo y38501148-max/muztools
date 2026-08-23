@@ -14,9 +14,12 @@ import okhttp3.logging.HttpLoggingInterceptor
 import java.io.File
 import java.io.IOException
 import java.math.BigInteger
+import java.security.SecureRandom
 import java.security.KeyFactory
 import java.security.spec.RSAPublicKeySpec
 import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import android.util.Base64
 import java.util.concurrent.TimeUnit
 
@@ -145,14 +148,33 @@ class ApiClient(private val prefs: PreferencesManager) {
     private suspend fun transportKey(): Result<TransportPublicKey> =
         executeGet("/api/security/public-key")
 
-    private fun encryptValue(value: String, key: TransportPublicKey): String {
+    private fun encryptBytes(value: ByteArray, key: TransportPublicKey): String {
         val publicKey = KeyFactory.getInstance("RSA").generatePublic(
             RSAPublicKeySpec(BigInteger(key.modulusHex, 16), BigInteger.valueOf(key.exponent))
         )
         val cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding")
         cipher.init(Cipher.ENCRYPT_MODE, publicKey)
-        return Base64.encodeToString(cipher.doFinal(value.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
+        return Base64.encodeToString(cipher.doFinal(value), Base64.NO_WRAP)
     }
+
+    private fun encryptValue(value: String, key: TransportPublicKey): String =
+        encryptBytes(value.toByteArray(Charsets.UTF_8), key)
+
+    private suspend fun hybridSecretRequest(value: String): Result<DouyinSessionRequest> =
+        transportKey().mapCatching { transport ->
+            val aesKey = ByteArray(32).also(SecureRandom()::nextBytes)
+            val nonce = ByteArray(12).also(SecureRandom()::nextBytes)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(aesKey, "AES"), GCMParameterSpec(128, nonce))
+            val sealed = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+            DouyinSessionRequest(
+                HybridEncryptedSecret(
+                    key = encryptBytes(aesKey, transport),
+                    nonce = Base64.encodeToString(nonce, Base64.NO_WRAP),
+                    ciphertext = Base64.encodeToString(sealed, Base64.NO_WRAP)
+                )
+            )
+        }
 
     private suspend fun encryptedRequest(fields: Map<String, String>, keepLogin: Boolean = false): Result<EncryptedCredentialRequest> {
         return transportKey().mapCatching { key ->
@@ -250,7 +272,8 @@ class ApiClient(private val prefs: PreferencesManager) {
 
     // Douyin APIs
     suspend fun submitDouyinSession(cookies: String): Result<DouyinSessionResponse> = withContext(Dispatchers.IO) {
-        val bodyJson = json.encodeToString(DouyinSessionRequest(cookies))
+        val encrypted = hybridSecretRequest(cookies).getOrElse { return@withContext Result.failure(it) }
+        val bodyJson = json.encodeToString(encrypted)
         val request = Request.Builder()
             .url(getFullUrl("/api/douyin/session"))
             .post(bodyJson.toRequestBody(jsonMediaType))

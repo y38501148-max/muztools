@@ -40,9 +40,11 @@ def _locked_write(path: Path, data: Any) -> None:
             json.dump(data, handle, ensure_ascii=False, indent=2)
         finally:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    path.chmod(0o600)
 
 
 FEATURE_KEYS = ("signin", "td", "spark")
+DOUYIN_ALLOWED_USERNAME = "muzermat"
 
 
 def user_path(user_id: str) -> Path:
@@ -91,13 +93,14 @@ def empty_user(username: str, password: str, display_name: str) -> dict[str, Any
             "exit_machine_id": 6,
         },
         "douyin": {
-            "cookies": [],
+            "cookies_encrypted": "",
             "unique_id": "",
             "username": "",
             "enabled": False,
             "default_message": "续火花",
             "targets": [],
-            "friends_cache": [],
+            "friends_cache_encrypted": "",
+            "friends_cache_initialized": False,
             "friends_cached_at": "",
             "hour": 9,
             "last_run": "",
@@ -109,6 +112,47 @@ def empty_user(username: str, password: str, display_name: str) -> dict[str, Any
         "notifications": [],
     }
 
+
+
+def can_use_douyin(user: dict[str, Any]) -> bool:
+    return str(user.get("username") or "").casefold() == DOUYIN_ALLOWED_USERNAME
+
+
+def set_douyin_cookies(douyin: dict[str, Any], cookies: list[dict[str, Any]]) -> None:
+    payload = json.dumps(cookies or [], ensure_ascii=False, separators=(",", ":"))
+    douyin["cookies_encrypted"] = encrypt_secret(payload) if cookies else ""
+    douyin.pop("cookies", None)
+
+
+def get_douyin_cookies(douyin: dict[str, Any]) -> list[dict[str, Any]]:
+    encrypted = douyin.get("cookies_encrypted")
+    if encrypted:
+        try:
+            value = json.loads(decrypt_secret(encrypted))
+        except Exception as exc:
+            raise ValueError("服务器保存的抖音 Cookie 无法解密，请重新绑定") from exc
+        return value if isinstance(value, list) else []
+    legacy = douyin.get("cookies")
+    return legacy if isinstance(legacy, list) else []
+
+
+def set_douyin_friends_cache(douyin: dict[str, Any], friends: list[dict[str, Any]]) -> None:
+    payload = json.dumps(friends or [], ensure_ascii=False, separators=(",", ":"))
+    douyin["friends_cache_encrypted"] = encrypt_secret(payload) if friends else ""
+    douyin["friends_cache_initialized"] = True
+    douyin.pop("friends_cache", None)
+
+
+def get_douyin_friends_cache(douyin: dict[str, Any]) -> list[dict[str, Any]]:
+    encrypted = douyin.get("friends_cache_encrypted")
+    if encrypted:
+        try:
+            value = json.loads(decrypt_secret(encrypted))
+        except Exception as exc:
+            raise ValueError("服务器保存的好友缓存无法解密，请主动刷新") from exc
+        return value if isinstance(value, list) else []
+    legacy = douyin.get("friends_cache")
+    return legacy if isinstance(legacy, list) else []
 
 def set_student_password(student: dict[str, Any], password: str) -> None:
     student["password_encrypted"] = encrypt_secret(password) if password else ""
@@ -142,6 +186,28 @@ def migrate_user_secrets(user: dict[str, Any]) -> bool:
     elif "password_encrypted" not in student:
         student["password_encrypted"] = ""
         changed = True
+
+    douyin = user.setdefault("douyin", {})
+    if "cookies" in douyin:
+        legacy_cookies = douyin.get("cookies")
+        set_douyin_cookies(douyin, legacy_cookies if isinstance(legacy_cookies, list) else [])
+        changed = True
+    elif "cookies_encrypted" not in douyin:
+        douyin["cookies_encrypted"] = ""
+        changed = True
+    if "friends_cache" in douyin:
+        legacy_friends = douyin.get("friends_cache")
+        set_douyin_friends_cache(douyin, legacy_friends if isinstance(legacy_friends, list) else [])
+        changed = True
+    elif "friends_cache_encrypted" not in douyin:
+        douyin["friends_cache_encrypted"] = ""
+        douyin["friends_cache_initialized"] = False
+        changed = True
+    if not can_use_douyin(user) and douyin.get("enabled"):
+        douyin["enabled"] = False
+        douyin["disabled_reason"] = "temporary_admin_only"
+        changed = True
+
     before = dict(user.get("approvals") or {})
     ensure_approvals(user)
     if before != user.get("approvals"):
@@ -254,6 +320,7 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
         "display_name": user.get("display_name"),
         "role": "admin" if str(user.get("username") or "").lower() == "muzermat" else "user",
         "can_manage_invites": str(user.get("username") or "").lower() == "muzermat",
+        "can_use_douyin": can_use_douyin(user),
         "created_at": user.get("created_at"),
         "student": {
             "student_id": student.get("student_id", ""),
@@ -266,7 +333,7 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
         "td": user.get("td", {}),
         "tibo": {"enabled": bool(user.get("tibo", {}).get("enabled", False))},
         "douyin": {
-            "connected": bool(user.get("douyin", {}).get("cookies")),
+            "connected": bool(user.get("douyin", {}).get("cookies_encrypted") or user.get("douyin", {}).get("cookies")),
             "username": user.get("douyin", {}).get("username", ""),
             "enabled": bool(user.get("douyin", {}).get("enabled")),
             "default_message": user.get("douyin", {}).get("default_message", "续火花"),
@@ -275,6 +342,11 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
             "last_run": user.get("douyin", {}).get("last_run", ""),
             "last_auto_run": user.get("douyin", {}).get("last_auto_run", ""),
             "last_auto_attempt": user.get("douyin", {}).get("last_auto_attempt", ""),
+            "auto_blocked_date": user.get("douyin", {}).get("auto_blocked_date", ""),
+            "auto_blocked_reason": user.get("douyin", {}).get("auto_blocked_reason", ""),
+            "last_result": user.get("douyin", {}).get("last_result", {}),
+            "target_status": user.get("douyin", {}).get("target_status", {}),
+            "disabled_reason": user.get("douyin", {}).get("disabled_reason", ""),
         },
     }
 

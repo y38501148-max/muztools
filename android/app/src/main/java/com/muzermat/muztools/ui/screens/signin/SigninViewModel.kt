@@ -25,6 +25,7 @@ data class SigninUiState(
     val isBinding: Boolean = false,
     val isTogglingAuto: Boolean = false,
     val canManageInvites: Boolean = false,
+    val canUseDouyin: Boolean = false,
     val issuedInviteCode: String = "",
     val inviteRemaining: Int = 0,
     val isIssuingInvite: Boolean = false
@@ -63,7 +64,8 @@ class SigninViewModel(
                     studentStatus = student ?: current.studentStatus,
                     scheduleItems = schedule?.schedule ?: current.scheduleItems,
                     isAutoSigninEnabled = schedule?.enabled ?: student?.autoSignin ?: current.isAutoSigninEnabled,
-                    canManageInvites = userRes.getOrNull()?.canManageInvites ?: current.canManageInvites
+                    canManageInvites = userRes.getOrNull()?.canManageInvites ?: current.canManageInvites,
+                    canUseDouyin = userRes.getOrNull()?.canUseDouyin ?: current.canUseDouyin
                 )
             }
         }

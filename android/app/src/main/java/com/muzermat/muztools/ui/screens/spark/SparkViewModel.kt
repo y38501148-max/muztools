@@ -23,6 +23,8 @@ import kotlinx.coroutines.launch
 data class SparkUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
+    val accessChecked: Boolean = false,
+    val canUseDouyin: Boolean = false,
     val session: DouyinSessionResponse = DouyinSessionResponse(),
     val config: DouyinConfig = DouyinConfig(),
     val friends: List<DouyinFriend> = emptyList(),
@@ -65,12 +67,22 @@ class SparkViewModel(
                 if (isRefresh) it.copy(isRefreshing = true) else it.copy(isLoading = true)
             }
 
+            val user = apiClient.getMe().getOrNull()
+            if (user != null && !user.canUseDouyin) {
+                _uiState.update {
+                    it.copy(isLoading = false, isRefreshing = false, accessChecked = true, canUseDouyin = false)
+                }
+                return@launch
+            }
+
             val sessionRes = apiClient.getDouyinSession()
             val loadedSession = sessionRes.getOrNull()
             _uiState.update { current ->
                 current.copy(
                     isLoading = false,
                     isRefreshing = false,
+                    accessChecked = true,
+                    canUseDouyin = user?.canUseDouyin ?: sessionRes.isSuccess,
                     session = loadedSession ?: current.session,
                     config = loadedSession?.resolvedConfig() ?: current.config
                 )
@@ -197,7 +209,7 @@ class SparkViewModel(
                     _uiState.update {
                         it.copy(session = session, config = session.resolvedConfig(), friends = emptyList(), friendsLoaded = false, friendsCachedAt = "")
                     }
-                    _messageFlow.emit(if (session.valid) "抖音 Cookie 校验成功" else "Cookie 状态已更新")
+                    _messageFlow.emit(if (session.valid) "抖音 Cookie 校验成功，旧目标已安全清空" else "Cookie 状态已更新")
                     loadData(isRefresh = true)
                 },
                 onFailure = { error -> _messageFlow.emit("提交失败: ${error.message}") }
@@ -216,6 +228,10 @@ class SparkViewModel(
     }
 
     fun addTarget(friend: DouyinFriend) {
+        if (friend.conversationId.isBlank() || friend.conversationType !in setOf("direct", "group")) {
+            viewModelScope.launch { _messageFlow.emit("该会话缺少稳定标识，请主动刷新好友列表后重试") }
+            return
+        }
         val current = _uiState.value.config
         if (current.targets.any { it.identityKey() == friend.identityKey() }) {
             viewModelScope.launch { _messageFlow.emit("该会话已在续火花列表中") }

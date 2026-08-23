@@ -121,6 +121,16 @@ muz-tool/
 - Playwright Sync API 必须通过 `asyncio.to_thread(...)` 调用。
 - 手动执行只更新 `last_run`；自动任务使用 `last_auto_run` 判重和 `last_auto_attempt` 限流重试。
 - Cookie 等同登录凭证，不得输出。
+- Cookie API 只接受 RSA 包装随机 AES-256-GCM 密钥的 `encrypted_secret` 混合信封；后端拒绝明文字段。
+- Cookie 与好友缓存分别保存为 `cookies_encrypted` 和 `friends_cache_encrypted`；旧明文字段在读取时迁移并删除，用户 JSON 文件权限为 `0600`、数据子目录为 `0700`。
+- WebUI 在安全上下文优先使用 Web Crypto；HTTP 入口使用仓库内置的 `@noble/ciphers` AES-GCM 回退文件，必须保留其 MIT 许可证。
+- 续火花安全整改期间仅用户名严格等于 `muzermat` 的账号可访问；其他账号后端返回 404，调度器强制关闭开关。
+- 自动或手动发送要求每个目标同时具备稳定 `conversation_id` 和明确 `conversation_type`；禁止退回名称搜索或同名首项。
+- 点击会话后必须重新读取活动会话 ID、类型和名称并完全一致；任一稳定标识无法读取时停止发送。
+- 按下 Enter 后必须确认同文案消息数量增加；输入框清空本身不能作为成功依据。
+- 每个用户只能有一个续火花执行实例；目标最多 10 个、消息最多 200 字，Cookie 导入、好友刷新、配置与手动执行均有限流。
+- 自动任务按目标记录当日进度，只重试尚未成功且明确可重试的目标；安全验证、会话失效、页面结构变化、结果不明确或未分类错误均熔断当天任务。
+- 每次浏览器执行结束后保存刷新后的 Cookie；重新导入 Cookie 时关闭自动任务并清空旧目标，防止跨账号误发。
 
 ### Tibo 监测
 
@@ -167,7 +177,7 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.4 为 `versionCode 21`；v1.3.3 为 `versionCode 20`。
+发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.5 为 `versionCode 22`；v1.3.4 为 `versionCode 21`。
 
 ## 服务端部署
 
@@ -200,14 +210,14 @@ ssh server2 'cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data .ven
 ## Android 热更新
 
 ```bash
-cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.4.apk
-scp release/muztools-1.3.4.apk server2:/tmp/
+cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.5.apk
+scp release/muztools-1.3.5.apk server2:/tmp/
 ssh server2 \
   "cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data \
-   .venv/bin/muz-admin set-version 1.3.4 --code 21 \
-   --title 'MuzTool v1.3.4' \
-   --message '后台通知保活、30 秒未读补拉与失效连接自动重建' \
-   --apk /tmp/muztools-1.3.4.apk"
+   .venv/bin/muz-admin set-version 1.3.5 --code 22 \
+   --title 'MuzTool v1.3.5' \
+   --message '续火花 Cookie 加密、稳定会话校验、安全停止与按目标重试' \
+   --apk /tmp/muztools-1.3.5.apk"
 ```
 
 除非用户明确要求，不使用 `--force`，也不提高 `min_version_code`。

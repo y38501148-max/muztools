@@ -631,6 +631,7 @@
 
   </div>
 
+<script src="/assets/aes-gcm.min.js"></script>
 <script>
 /**
  * 盐的工具箱 - 现代化 Web 前端核心逻辑 (IIFE 保证全局干净，杜绝 window.top 等全局变量冲突)
@@ -864,7 +865,7 @@
         container.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><div>火花配置加载中...</div></div>`;
         container.innerHTML = await renderSparkView();
         const dy = state.douyinSession?.douyin || state.douyinSession || {};
-        if ((state.douyinSession?.valid || dy.connected) && !state.douyinFriendsLoaded && !state.douyinFriendsLoading) {
+        if (state.user?.can_use_douyin && (state.douyinSession?.valid || dy.connected) && !state.douyinFriendsLoaded && !state.douyinFriendsLoading) {
           setTimeout(() => loadDouyinFriendList(), 0);
         }
       } else if (current === "tibo") {
@@ -964,9 +965,9 @@
     return transportKeyCache;
   }
 
-  async function encryptCredential(value) {
+  async function rsaEncryptBytes(message) {
     const key = await getTransportKey();
-    const message = new TextEncoder().encode(String(value ?? ""));
+    if (!(message instanceof Uint8Array)) message = new Uint8Array(message);
     const size = Number(key.key_size);
     if (message.length > size - 11) throw new Error("加密字段过长");
     const encoded = new Uint8Array(size);
@@ -983,6 +984,31 @@
     const modulus = BigInt("0x" + key.modulus_hex);
     const exponent = BigInt(key.exponent);
     return bytesToBase64(bigIntToBytes(modPow(bytesToBigInt(encoded), exponent, modulus), size));
+  }
+
+  async function encryptCredential(value) {
+    return rsaEncryptBytes(new TextEncoder().encode(String(value ?? "")));
+  }
+
+  async function encryptLargeSecret(value) {
+    const plaintext = new TextEncoder().encode(String(value ?? ""));
+    if (plaintext.length > 256 * 1024) throw new Error("Cookie 内容过长");
+    const aesKey = crypto.getRandomValues(new Uint8Array(32));
+    const nonce = crypto.getRandomValues(new Uint8Array(12));
+    let sealed;
+    if (crypto.subtle) {
+      const imported = await crypto.subtle.importKey("raw", aesKey, {name: "AES-GCM"}, false, ["encrypt"]);
+      sealed = new Uint8Array(await crypto.subtle.encrypt({name: "AES-GCM", iv: nonce, tagLength: 128}, imported, plaintext));
+    } else if (typeof globalThis.muzAesGcmEncrypt === "function") {
+      sealed = globalThis.muzAesGcmEncrypt(aesKey, nonce, plaintext);
+    } else {
+      throw new Error("当前浏览器不支持 Cookie 安全加密，请更新浏览器后重试");
+    }
+    return {
+      key: await rsaEncryptBytes(aesKey),
+      nonce: bytesToBase64(nonce),
+      ciphertext: bytesToBase64(sealed)
+    };
   }
 
   async function encryptedFields(fields) {
@@ -1120,7 +1146,7 @@
             </div>
           </div>
         </div>
-        <div class="card click" data-nav="spark">
+        ${state.user?.can_use_douyin ? `<div class="card click" data-nav="spark">
           <div class="row">
             <div class="icon-box" style="background: var(--spark-soft); color: var(--spark);">🔥</div>
             <div style="flex:1;">
@@ -1128,7 +1154,7 @@
               <p class="muted-sm">${state.user?.douyin?.connected ? "已绑定抖音" : "未登录抖音"}</p>
             </div>
           </div>
-        </div>
+        </div>` : ""}
       </div>
 
       <!-- 今日课表概览 -->
@@ -1179,7 +1205,7 @@
         icon: "🏃",
         status: "available"
       },
-      {
+      ...(state.user?.can_use_douyin ? [{
         id: "spark",
         title: "抖音续火花",
         desc: "通过浏览器 Cookie 绑定抖音账号，定时自动发消息续火花",
@@ -1187,7 +1213,7 @@
         color: "#e65100",
         icon: "🔥",
         status: "available"
-      },
+      }] : []),
       {
         id: "tibo",
         title: "Tibo Reset 监测",
@@ -1624,13 +1650,19 @@
     if (!targets.length) {
       return `<div class="empty-state" style="padding: 20px 10px;">先从上方读取到的好友列表中选择并添加</div>`;
     }
-    return targets.map((target, index) => `
+    const dy = state.douyinSession?.douyin || state.douyinSession || {};
+    const statuses = dy.target_status || {};
+    return targets.map((target, index) => {
+      const stable = Boolean(target.conversation_id && ["direct", "group"].includes(target.conversation_type));
+      const status = statuses[sparkConversationKey(target)] || {};
+      return `
       <div class="list-item spark-target-row" data-index="${index}">
         <div style="flex: 1; min-width: 0;">
           <div class="row-between" style="align-items: flex-start;">
             <div>
-              <b>${esc(target.name)} ${target.conversation_type === "group" ? `<span class="badge approved" style="margin-left:6px;">群聊</span>` : ""}</b>
+              <b>${esc(target.name)} ${target.conversation_type === "group" ? `<span class="badge approved" style="margin-left:6px;">群聊</span>` : ""} ${stable ? "" : `<span class="badge rejected" style="margin-left:6px;">需重新添加</span>`}</b>
               <p class="muted-sm" style="margin-top: 3px;">${target.mode === "custom" ? "自定义模式" : "标准模式：使用默认续火花文案"}</p>
+              ${status.last_attempt ? `<p class="muted-sm" style="margin-top:3px;">最近结果：${esc(status.status || "未知")} · ${esc(String(status.last_attempt).replace("T", " ").split("+")[0])}${status.error ? ` · ${esc(status.error)}` : ""}</p>` : ""}
             </div>
             <button type="button" class="btn ghost sm" data-action="remove-spark-target" data-index="${index}">移除</button>
           </div>
@@ -1643,7 +1675,8 @@
               placeholder="输入该好友专用文案" style="flex: 1; min-width: 190px;" ${target.mode === "custom" ? "" : "disabled"} />
           </div>
         </div>
-      </div>`).join("");
+      </div>`;
+    }).join("");
   }
 
   function filteredDouyinFriends() {
@@ -1674,18 +1707,19 @@
       : "";
     return loadingBanner + friends.map(friend => {
       const added = selected.has(sparkConversationKey(friend));
+      const stable = Boolean(friend.conversation_id && ["direct", "group"].includes(friend.conversation_type));
       return `
         <div class="list-item">
           <div class="row" style="flex: 1; min-width: 0;">
             ${friend.avatar_url ? `<img src="${esc(friend.avatar_url)}" alt="" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;" />` : `<div class="icon-box" style="width:36px;height:36px;border-radius:50%;">${friend.conversation_type === "group" ? "👥" : "👤"}</div>`}
             <div style="min-width:0;">
               <b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">${esc(friend.name)}</b>
-              <span class="muted-sm">${friend.conversation_type === "group" ? "群聊" : "好友"}</span>
+              <span class="muted-sm">${friend.conversation_type === "group" ? "群聊" : (friend.conversation_type === "direct" ? "好友" : "缺少稳定标识")}</span>
             </div>
           </div>
           <button type="button" class="btn ${added ? "ghost" : "soft"} sm" data-action="add-spark-friend"
-            data-name="${esc(friend.name)}" data-conversation-id="${esc(friend.conversation_id || "")}" data-conversation-short-id="${esc(friend.conversation_short_id || "")}" data-conversation-type="${esc(friend.conversation_type || "")}" ${added ? "disabled" : ""}>
-            ${added ? "已添加" : "添加"}
+            data-name="${esc(friend.name)}" data-conversation-id="${esc(friend.conversation_id || "")}" data-conversation-short-id="${esc(friend.conversation_short_id || "")}" data-conversation-type="${esc(friend.conversation_type || "")}" ${added || !stable ? "disabled" : ""}>
+            ${added ? "已添加" : (stable ? "添加" : "不可添加")}
           </button>
         </div>`;
     }).join("");
@@ -1740,6 +1774,16 @@
 
   // 5. 抖音续火花页面
   async function renderSparkView() {
+    if (!state.user?.can_use_douyin) {
+      state.douyinSession = null;
+      return `
+        ${renderPageBackHeader("抖音续火花")}
+        <div class="card center" style="padding:32px 18px;">
+          <div style="font-size:42px;margin-bottom:10px;">🔒</div>
+          <h3>功能暂时不可用</h3>
+          <p class="muted-sm" style="margin-top:8px;line-height:1.6;">续火花安全整改期间仅对管理员账号开放，其他账号的自动任务已在服务端暂停。</p>
+        </div>`;
+    }
     let session = {};
     try {
       session = await api("/api/douyin/session");
@@ -1751,7 +1795,10 @@
     const dy = session.douyin || session;
     const targets = dy.targets || session.targets || [];
     const isConnected = !!(session.valid || dy.connected);
+    const lastResult = dy.last_result || {};
+    const blockedReason = String(dy.auto_blocked_reason || "");
     state.sparkTargets = targets.map(normalizeSparkTarget).filter(target => target.name);
+    const hasInvalidTargets = state.sparkTargets.some(target => !target.conversation_id || !["direct", "group"].includes(target.conversation_type));
     if (!isConnected) {
       state.douyinFriendResults = [];
       state.douyinFriendsLoaded = false;
@@ -1785,9 +1832,19 @@
           </button>
         </div>
         <p class="muted-sm" style="margin-top: 10px; line-height: 1.55;">
-          Cookie 只会保存到你的 MuzTool 账号中。请勿把 Cookie 发送给其他人。
+          Cookie 会先在浏览器中使用随机 AES-GCM 密钥加密，再提交给服务端加密保存。重新绑定会清空旧账号的目标列表，防止误发。
         </p>
       </div>
+
+      ${(dy.auto_blocked_date || lastResult.attempted_at) ? `
+        <div class="card" style="background:${dy.auto_blocked_date ? "var(--danger-bg)" : "var(--primary-soft)"};">
+          <h3>${dy.auto_blocked_date ? "今日自动任务已安全暂停" : "最近一次执行结果"}</h3>
+          <p class="muted-sm" style="margin-top:6px;line-height:1.6;">
+            最近尝试：${esc(String(lastResult.attempted_at || dy.last_auto_attempt || "未知").replace("T", " ").split("+")[0])}<br>
+            成功 ${Number(lastResult.success_count || 0)} 条，失败 ${Number(lastResult.failure_count || 0)} 条，结果不明确 ${Number(lastResult.ambiguous_count || 0)} 条。
+            ${blockedReason ? `<br>暂停原因：${esc(blockedReason)}` : ""}
+          </p>
+        </div>` : ""}
 
       <!-- 自动化参数配置 -->
       <div class="card">
@@ -1830,9 +1887,10 @@
           ${renderSparkTargetRows()}
         </div>
         <p class="muted-sm" style="margin-top: 7px;">标准模式使用默认文案；自定义模式可为该好友单独设置消息。修改后请点击下方保存。</p>
+        ${hasInvalidTargets ? `<p class="muted-sm" style="margin-top:7px;color:var(--danger);">列表中存在旧版目标，缺少稳定会话标识。请先移除并从好友缓存重新添加，自动任务不会使用名称猜测。</p>` : ""}
 
         <div class="row" style="gap: 10px; margin-top: 16px;">
-          <button type="button" class="btn" data-action="save-spark-config" data-enable="true" style="flex: 1;">
+          <button type="button" class="btn" data-action="save-spark-config" data-enable="true" style="flex: 1;" ${hasInvalidTargets || !state.sparkTargets.length ? "disabled" : ""}>
             保存并启用
           </button>
           <button type="button" class="btn ghost" data-action="save-spark-config" data-enable="false" style="flex: 1;">
@@ -1841,7 +1899,7 @@
         </div>
 
         <div style="margin-top: 12px;">
-          <button type="button" class="btn soft wide" data-action="run-spark-now">
+          <button type="button" class="btn soft wide" data-action="run-spark-now" ${hasInvalidTargets || !state.sparkTargets.length ? "disabled" : ""}>
             ⚡ 立即执行一次发火花
           </button>
         </div>
@@ -2377,14 +2435,14 @@
         if (!cookies) throw new Error("请输入 Cookie 内容");
         await api("/api/douyin/session", {
           method: "POST",
-          body: { cookies }
+          body: { encrypted_secret: await encryptLargeSecret(cookies) }
         });
         state.douyinFriendResults = [];
         state.douyinFriendsLoaded = false;
         state.douyinFriendsError = "";
         state.douyinFriendQuery = "";
         closeModal();
-        toast("Cookie 导入成功！");
+        toast("Cookie 导入成功，旧目标已为安全起见清空");
         await refreshAllData();
         await renderPage();
       });
@@ -2438,7 +2496,14 @@
           const current = state.sparkTargets[index] || {};
           const mode = row.querySelector(".spark-target-mode")?.value === "custom" ? "custom" : "standard";
           const message = mode === "custom" ? (row.querySelector(".spark-target-message")?.value || "").trim() : "";
-          return { name: current.name || "", mode, message };
+          return {
+            name: current.name || "",
+            mode,
+            message,
+            conversation_id: current.conversation_id || "",
+            conversation_short_id: current.conversation_short_id || "",
+            conversation_type: current.conversation_type || ""
+          };
         }).filter(target => target.name);
         state.sparkTargets = targets.map(normalizeSparkTarget);
 

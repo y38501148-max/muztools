@@ -8,7 +8,8 @@ data class User(
     val username: String,
     @SerialName("display_name") val displayName: String = "",
     val role: String? = null,
-    @SerialName("can_manage_invites") val canManageInvites: Boolean = false
+    @SerialName("can_manage_invites") val canManageInvites: Boolean = false,
+    @SerialName("can_use_douyin") val canUseDouyin: Boolean = false
 )
 
 @Serializable
@@ -149,8 +150,33 @@ data class TdManualRequest(
 )
 
 @Serializable
+data class HybridEncryptedSecret(
+    val key: String,
+    val nonce: String,
+    val ciphertext: String
+)
+
+@Serializable
 data class DouyinSessionRequest(
-    val cookies: String
+    @SerialName("encrypted_secret") val encryptedSecret: HybridEncryptedSecret
+)
+
+@Serializable
+data class DouyinTargetStatus(
+    val name: String = "",
+    val status: String = "",
+    val error: String = "",
+    @SerialName("last_attempt") val lastAttempt: String = "",
+    @SerialName("last_success") val lastSuccess: String = ""
+)
+
+@Serializable
+data class DouyinLastResult(
+    @SerialName("attempted_at") val attemptedAt: String = "",
+    @SerialName("success_count") val successCount: Int = 0,
+    @SerialName("failure_count") val failureCount: Int = 0,
+    @SerialName("ambiguous_count") val ambiguousCount: Int = 0,
+    @SerialName("halt_reason") val haltReason: String = ""
 )
 
 @Serializable
@@ -163,7 +189,12 @@ data class DouyinSessionState(
     val hour: Int = 9,
     @SerialName("last_run") val lastRun: String = "",
     @SerialName("last_auto_run") val lastAutoRun: String = "",
-    @SerialName("last_auto_attempt") val lastAutoAttempt: String = ""
+    @SerialName("last_auto_attempt") val lastAutoAttempt: String = "",
+    @SerialName("auto_blocked_date") val autoBlockedDate: String = "",
+    @SerialName("auto_blocked_reason") val autoBlockedReason: String = "",
+    @SerialName("last_result") val lastResult: DouyinLastResult = DouyinLastResult(),
+    @SerialName("target_status") val targetStatus: Map<String, DouyinTargetStatus> = emptyMap(),
+    @SerialName("disabled_reason") val disabledReason: String = ""
 )
 
 @Serializable

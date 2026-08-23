@@ -41,7 +41,9 @@ fun FeaturesScreen(
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(vertical = 8.dp)) {
             item { FeatureCard("自动签到", "课表查询与定时自动签到", Icons.Default.HowToReg, MaterialTheme.colorScheme.primary, onOpenSignin) }
             item { FeatureCard("TD / 阳光", "体育锻炼次数查询与校园网直连打卡", Icons.Default.DirectionsRun, Color(0xFF0288D1), onOpenTd) }
-            item { FeatureCard("抖音续火花", "导入 Cookie 后自动维护聊天火花", Icons.Default.ElectricBolt, Color(0xFFE65100), onOpenSpark) }
+            if (state.canUseDouyin) {
+                item { FeatureCard("抖音续火花", "导入 Cookie 后自动维护聊天火花", Icons.Default.ElectricBolt, Color(0xFFE65100), onOpenSpark) }
+            }
             item { FeatureCard("Tibo Reset 监测", "查看相关推特历史与系统通知", Icons.Default.Radar, Color(0xFF111827), onOpenTibo) }
             if (state.canManageInvites) {
                 item {

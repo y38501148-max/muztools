@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.muzermat.muztools.data.model.DouyinFriend
+import com.muzermat.muztools.data.model.DouyinTargetStatus
 import com.muzermat.muztools.data.model.SparkTarget
 import com.muzermat.muztools.ui.components.SectionHeader
 import com.muzermat.muztools.ui.components.StatusBadge
@@ -42,6 +43,33 @@ fun SparkScreen(viewModel: SparkViewModel) {
         viewModel.messageFlow.collect { snackbarHostState.showSnackbar(it) }
     }
 
+    if (uiState.accessChecked && !uiState.canUseDouyin) {
+        Scaffold(
+            topBar = { TopAppBar(title = { Text("抖音火花自动化", fontWeight = FontWeight.Bold) }) }
+        ) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding).padding(24.dp), contentAlignment = Alignment.Center) {
+                Card(shape = RoundedCornerShape(20.dp)) {
+                    Column(Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.Lock, null, Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(12.dp))
+                        Text("功能暂时不可用", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "续火花安全整改期间仅对管理员账号开放，其他账号的自动任务已在服务端暂停。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+        return
+    }
+
+    val sessionState = uiState.session.douyin
+    val targetsStable = uiState.config.targets.isNotEmpty() && uiState.config.targets.all {
+        it.conversationId.isNotBlank() && it.conversationType in setOf("direct", "group")
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -148,7 +176,7 @@ fun SparkScreen(viewModel: SparkViewModel) {
                             Switch(
                                 checked = uiState.config.enabled,
                                 onCheckedChange = viewModel::toggleAutoSpark,
-                                enabled = uiState.session.valid && !uiState.isSavingConfig
+                                enabled = uiState.session.valid && targetsStable && !uiState.isSavingConfig
                             )
                         }
                         HorizontalDivider(Modifier.padding(vertical = 12.dp))
@@ -189,7 +217,7 @@ fun SparkScreen(viewModel: SparkViewModel) {
                         Spacer(Modifier.height(12.dp))
                         Button(
                             onClick = { viewModel.updateConfig() },
-                            enabled = uiState.session.valid && !uiState.isSavingConfig,
+                            enabled = uiState.session.valid && targetsStable && !uiState.isSavingConfig,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             if (uiState.isSavingConfig) {
@@ -197,6 +225,34 @@ fun SparkScreen(viewModel: SparkViewModel) {
                                 Spacer(Modifier.width(8.dp))
                             }
                             Text(if (uiState.isSavingConfig) "正在保存..." else "保存自动化配置")
+                        }
+                    }
+                }
+            }
+
+            if (!sessionState?.autoBlockedDate.isNullOrBlank() || !sessionState?.lastResult?.attemptedAt.isNullOrBlank()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (!sessionState?.autoBlockedDate.isNullOrBlank())
+                                MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer
+                        ),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(
+                                if (!sessionState?.autoBlockedDate.isNullOrBlank()) "今日自动任务已安全暂停" else "最近一次执行结果",
+                                fontWeight = FontWeight.Bold
+                            )
+                            val result = sessionState?.lastResult
+                            Text(
+                                "最近尝试：${formatSparkTimestamp(result?.attemptedAt.orEmpty()).ifBlank { "未知" }}\n" +
+                                    "成功 ${result?.successCount ?: 0} 条，失败 ${result?.failureCount ?: 0} 条，结果不明确 ${result?.ambiguousCount ?: 0} 条" +
+                                    if (!sessionState?.autoBlockedReason.isNullOrBlank()) "\n暂停原因：${sessionState?.autoBlockedReason}" else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -237,6 +293,7 @@ fun SparkScreen(viewModel: SparkViewModel) {
                     SparkTargetCard(
                         target = target,
                         defaultMessage = uiState.config.defaultMessage,
+                        status = sessionState?.targetStatus?.get(target.identityKey()),
                         onEdit = { editingTarget = target },
                         onDelete = { viewModel.removeTarget(target) }
                     )
@@ -247,7 +304,7 @@ fun SparkScreen(viewModel: SparkViewModel) {
                 Spacer(Modifier.height(20.dp))
                 FilledTonalButton(
                     onClick = viewModel::runSparkNow,
-                    enabled = !uiState.isRunningSpark && uiState.session.valid && uiState.config.targets.isNotEmpty(),
+                    enabled = !uiState.isRunningSpark && uiState.session.valid && targetsStable,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(48.dp)
                 ) {
                     if (uiState.isRunningSpark) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -288,6 +345,7 @@ fun SparkScreen(viewModel: SparkViewModel) {
                     Text("2. 打开 www.douyin.com/chat，完成登录及安全验证。")
                     Text("3. 点击 Cookie-Editor，选择 Export → JSON。")
                     Text("4. 复制完整 JSON 数组，回到 MuzTool 导入。")
+                    Text("导入时会使用随机 AES-GCM 密钥加密传输，服务端再加密保存。重新绑定会清空旧目标。", style = MaterialTheme.typography.bodySmall)
                     Text("Cookie 等同于登录凭证，请勿截图或转发给其他人。", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             },
@@ -465,6 +523,7 @@ private fun EditTargetDialog(
 private fun SparkTargetCard(
     target: SparkTarget,
     defaultMessage: String,
+    status: DouyinTargetStatus?,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -498,6 +557,17 @@ private fun SparkTargetCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2
                 )
+                if (target.conversationId.isBlank() || target.conversationType !in setOf("direct", "group")) {
+                    Text("缺少稳定会话标识，请移除后从好友列表重新添加", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                } else if (status?.lastAttempt?.isNotBlank() == true) {
+                    Text(
+                        "最近结果：${status.status.ifBlank { "未知" }} · ${formatSparkTimestamp(status.lastAttempt)}" +
+                            status.error.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2
+                    )
+                }
             }
             IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "编辑") }
             IconButton(onClick = onDelete) { Icon(Icons.Default.DeleteOutline, contentDescription = "删除", tint = MaterialTheme.colorScheme.error) }

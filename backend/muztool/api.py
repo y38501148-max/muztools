@@ -15,14 +15,18 @@ from . import appver, config, sunshine, td
 from .fcm import register_token as register_fcm_token, unregister_token as unregister_fcm_token
 from .config import CORS_ORIGINS, ensure_dirs
 from .douyin import (
+    MAX_MESSAGE_LENGTH,
+    MAX_SPARK_TARGETS,
+    DouyinAutomationError,
     normalize_cookies,
     normalize_target,
     run_spark,
     list_douyin_friends,
     validate_douyin_cookies,
+    validate_spark_targets,
 )
 from .invites import consume_invite, invite_stats, issue_invite, release_invite
-from .security import decrypt_transport_payload, public_transport_key, validate_password, validate_username
+from .security import decrypt_hybrid_secret, decrypt_transport_payload, public_transport_key, validate_password, validate_username
 from .notify import (
     configure_live_notifications,
     list_notifications,
@@ -36,16 +40,21 @@ from .signin_core import perform_duaa_login, safe_fetch_schedule
 from .store import (
     FEATURE_KEYS,
     authenticate,
+    can_use_douyin,
     create_session,
     create_user,
     delete_session,
     ensure_approvals,
     find_user_by_username,
+    get_douyin_cookies,
+    get_douyin_friends_cache,
     get_student_password,
     now_iso,
     photo_dir,
     public_user,
     save_user,
+    set_douyin_cookies,
+    set_douyin_friends_cache,
     set_student_password,
     student_runtime,
     user_from_token,
@@ -65,9 +74,10 @@ if CORS_ORIGINS:
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     content_length = request.headers.get("content-length")
-    if request.url.path in {"/api/auth/login", "/api/auth/register", "/api/student/bind"} and content_length:
+    if request.url.path in {"/api/auth/login", "/api/auth/register", "/api/student/bind", "/api/douyin/session"} and content_length:
         try:
-            if int(content_length) > 64 * 1024:
+            limit = 512 * 1024 if request.url.path == "/api/douyin/session" else 64 * 1024
+            if int(content_length) > limit:
                 return Response("请求体过大", status_code=413, media_type="text/plain")
         except ValueError:
             return Response("请求体无效", status_code=400, media_type="text/plain")
@@ -250,7 +260,7 @@ def persist_qr_cookies(user: dict[str, Any], session) -> None:
     if session.status != "success" or not session.cookies or session.persisted:
         return
     user.setdefault("douyin", {})
-    user["douyin"]["cookies"] = session.cookies
+    set_douyin_cookies(user["douyin"], session.cookies)
     if session.nickname:
         user["douyin"]["username"] = session.nickname
     save_user(user)
@@ -280,6 +290,12 @@ def _rate_limit(request: Request, scope: str, identity: str, limit: int, window_
 def _require_invite_admin(user: dict[str, Any]) -> None:
     if str(user.get("username") or "").casefold() != "muzermat":
         raise HTTPException(status_code=404, detail="功能不存在")
+
+
+def _require_douyin_access(user: dict[str, Any]) -> None:
+    if not can_use_douyin(user):
+        raise HTTPException(status_code=404, detail="功能暂时不可用")
+    require_feature(user, "spark")
 
 
 @app.on_event("startup")
@@ -662,7 +678,7 @@ async def sunshine_status(user: dict[str, Any] = Depends(current_user)) -> dict[
 
 @app.post("/api/douyin/qr/start")
 async def douyin_qr_start(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    require_feature(user, "spark")
+    _require_douyin_access(user)
     raise HTTPException(
         status_code=410,
         detail="抖音扫码登录已停用，请使用 Cookie 导入完成账号绑定",
@@ -672,7 +688,7 @@ async def douyin_qr_start(user: dict[str, Any] = Depends(current_user)) -> dict[
 @app.get("/api/douyin/qr/status")
 async def douyin_qr_status(login_id: str = Query(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     _ = login_id
-    require_feature(user, "spark")
+    _require_douyin_access(user)
     raise HTTPException(
         status_code=410,
         detail="抖音扫码登录已停用，请使用 Cookie 导入完成账号绑定",
@@ -682,22 +698,34 @@ async def douyin_qr_status(login_id: str = Query(...), user: dict[str, Any] = De
 @app.post("/api/douyin/qr/cancel")
 async def douyin_qr_cancel(payload: dict[str, Any] = Body(default={}), user: dict[str, Any] = Depends(current_user)) -> dict[str, str]:
     _ = payload
-    require_feature(user, "spark")
+    _require_douyin_access(user)
     return {"status": "ok"}
 
 
 @app.post("/api/douyin/session")
-async def douyin_session(payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    require_feature(user, "spark")
+async def douyin_session(request: Request, payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _require_douyin_access(user)
+    _rate_limit(request, "douyin-session", str(user.get("id") or ""), 5, 3600)
     try:
-        cookies = normalize_cookies(payload.get("cookies"))
+        cookie_text = decrypt_hybrid_secret(payload, max_plaintext=256 * 1024)
+        cookies = normalize_cookies(cookie_text)
         cookies, detected_name = await asyncio.to_thread(validate_douyin_cookies, cookies)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     user.setdefault("douyin", {})
-    user["douyin"]["cookies"] = cookies
-    user["douyin"].pop("friends_cache", None)
+    set_douyin_cookies(user["douyin"], cookies)
+    set_douyin_friends_cache(user["douyin"], [])
+    user["douyin"]["friends_cache_initialized"] = False
     user["douyin"].pop("friends_cached_at", None)
+    # A Cookie import may represent a different Douyin account. Reusing the
+    # previous account's conversation ids could send to an unintended target.
+    user["douyin"]["enabled"] = False
+    user["douyin"]["targets"] = []
+    user["douyin"]["target_status"] = {}
+    user["douyin"].pop("auto_progress_date", None)
+    user["douyin"].pop("auto_completed_target_keys", None)
+    user["douyin"].pop("auto_blocked_date", None)
+    user["douyin"].pop("auto_blocked_reason", None)
     user["douyin"]["username"] = str(
         payload.get("username")
         or detected_name
@@ -716,7 +744,7 @@ async def douyin_session(payload: dict[str, Any] = Body(...), user: dict[str, An
 
 @app.get("/api/douyin/session")
 async def get_douyin_session(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    require_feature(user, "spark")
+    _require_douyin_access(user)
     dy = public_user(user)["douyin"]
     return {
         "valid": bool(dy.get("connected")),
@@ -785,30 +813,33 @@ def _enrich_spark_targets(cfg: dict[str, Any], friends: list[dict[str, str]]) ->
 
 @app.get("/api/douyin/friends")
 async def douyin_friends(
+    request: Request,
     query: str = Query("", max_length=64),
     refresh: bool = Query(False),
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
-    require_feature(user, "spark")
+    _require_douyin_access(user)
     cfg = user.setdefault("douyin", {})
-    cookies = cfg.get("cookies") or []
+    cookies = get_douyin_cookies(cfg)
     if not cookies:
         raise HTTPException(status_code=400, detail="请先导入有效的抖音 Cookie")
 
-    cache_exists = "friends_cache" in cfg
+    cache_exists = bool(cfg.get("friends_cache_initialized"))
     refreshed = bool(refresh or not cache_exists)
     if refreshed:
+        if refresh:
+            _rate_limit(request, "douyin-friends-refresh", str(user.get("id") or ""), 4, 3600)
         try:
             friends = await asyncio.to_thread(list_douyin_friends, cookies)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         friends = _normalize_friend_cache(friends)
-        cfg["friends_cache"] = friends
+        set_douyin_friends_cache(cfg, friends)
         cfg["friends_cached_at"] = now_iso()
         _enrich_spark_targets(cfg, friends)
         save_user(user)
     else:
-        friends = _normalize_friend_cache(cfg.get("friends_cache"))
+        friends = _normalize_friend_cache(get_douyin_friends_cache(cfg))
         if _enrich_spark_targets(cfg, friends):
             save_user(user)
 
@@ -827,31 +858,46 @@ async def douyin_friends(
 
 
 @app.put("/api/douyin/config")
-async def douyin_config(payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    require_feature(user, "spark")
+async def douyin_config(request: Request, payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _require_douyin_access(user)
+    _rate_limit(request, "douyin-config", str(user.get("id") or ""), 30, 60)
     cfg = user.setdefault("douyin", {})
     if "enabled" in payload:
         cfg["enabled"] = bool(payload.get("enabled"))
     if "default_message" in payload:
-        cfg["default_message"] = str(payload.get("default_message") or "续火花")
+        default_message = str(payload.get("default_message") or "续火花").strip()
+        if len(default_message) > MAX_MESSAGE_LENGTH:
+            raise HTTPException(status_code=400, detail=f"默认文案不能超过 {MAX_MESSAGE_LENGTH} 个字符")
+        cfg["default_message"] = default_message
     if "hour" in payload:
         cfg["hour"] = max(0, min(int(payload.get("hour") or 9), 23))
     if "targets" in payload:
-        targets = []
-        for item in payload.get("targets") or []:
-            if not isinstance(item, dict):
-                continue
-            target = normalize_target(item)
-            if target["name"]:
-                targets.append(target)
+        raw_targets = [item for item in (payload.get("targets") or []) if isinstance(item, dict)]
+        if len(raw_targets) > MAX_SPARK_TARGETS:
+            raise HTTPException(status_code=400, detail=f"续火花目标不能超过 {MAX_SPARK_TARGETS} 个")
+        try:
+            targets = validate_spark_targets(raw_targets, require_identity=bool(payload.get("enabled", cfg.get("enabled")))) if raw_targets else []
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         cfg["targets"] = targets
+    if cfg.get("enabled"):
+        try:
+            validate_spark_targets([item for item in cfg.get("targets") or [] if isinstance(item, dict)], require_identity=True)
+        except ValueError as exc:
+            cfg["enabled"] = False
+            save_user(user)
+            raise HTTPException(status_code=400, detail=f"无法开启自动续火花：{exc}") from exc
+        if cfg.get("auto_blocked_reason") == "target_invalid":
+            cfg.pop("auto_blocked_date", None)
+            cfg.pop("auto_blocked_reason", None)
     save_user(user)
     return {"success": True, "message": "火花配置已保存", "user": public_user(user)}
 
 
 @app.post("/api/douyin/run")
-async def douyin_run(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    require_feature(user, "spark")
+async def douyin_run(request: Request, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    _require_douyin_access(user)
+    _rate_limit(request, "douyin-run", str(user.get("id") or ""), 3, 3600)
     try:
         result = await asyncio.to_thread(run_spark, user)
     except Exception as exc:
@@ -899,3 +945,12 @@ async def web_root():
 @app.get("/index.html")
 async def web_index():
     return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/assets/aes-gcm.min.js")
+async def web_aes_gcm():
+    return FileResponse(
+        WEB_DIR / "aes-gcm.min.js",
+        media_type="text/javascript",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )

@@ -4,7 +4,8 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
-from Crypto.Cipher import PKCS1_v1_5
+from Crypto.Cipher import AES, PKCS1_v1_5
+from Crypto.Random import get_random_bytes
 from Crypto.PublicKey import RSA
 
 from muztool import api as api_module
@@ -32,6 +33,34 @@ def login_payload(client, *, keep_login=True, username="persist_1", password="Se
         {"username": username, "password": password},
         keep_login=keep_login,
     )
+
+
+def hybrid_secret_payload(client, value: str):
+    public = client.get("/api/security/public-key")
+    assert public.status_code == 200
+    data = public.json()
+    rsa_key = RSA.construct((int(data["modulus_hex"], 16), int(data["exponent"])))
+    aes_key = get_random_bytes(32)
+    nonce = get_random_bytes(12)
+    cipher = AES.new(aes_key, AES.MODE_GCM, nonce=nonce)
+    ciphertext, tag = cipher.encrypt_and_digest(value.encode("utf-8"))
+    return {
+        "encrypted_secret": {
+            "key": base64.b64encode(PKCS1_v1_5.new(rsa_key).encrypt(aes_key)).decode("ascii"),
+            "nonce": base64.b64encode(nonce).decode("ascii"),
+            "ciphertext": base64.b64encode(ciphertext + tag).decode("ascii"),
+        }
+    }
+
+
+def enable_admin_douyin(client, user):
+    user["username"] = "muzermat"
+    store.save_user(user)
+    login = client.post(
+        "/api/auth/login",
+        json=login_payload(client, keep_login=True, username="muzermat"),
+    )
+    assert login.status_code == 200
 
 
 @pytest.fixture()
@@ -118,12 +147,8 @@ def test_login_without_keep_login_does_not_persist_cookie(client_and_user):
 
 
 def test_manual_spark_runs_sync_playwright_worker_off_event_loop(client_and_user, monkeypatch):
-    client, _user = client_and_user
-    login = client.post(
-        "/api/auth/login",
-        json=login_payload(client, keep_login=True),
-    )
-    assert login.status_code == 200
+    client, user = client_and_user
+    enable_admin_douyin(client, user)
 
     def fake_run_spark(user):
         with pytest.raises(RuntimeError):
@@ -139,8 +164,10 @@ def test_manual_spark_runs_sync_playwright_worker_off_event_loop(client_and_user
 
 def test_friend_list_uses_cache_until_explicit_refresh(client_and_user, monkeypatch):
     client, user = client_and_user
-    user["douyin"]["cookies"] = [{"name": "sessionid", "value": "test", "domain": ".douyin.com", "path": "/"}]
-    user["douyin"].pop("friends_cache", None)
+    user["username"] = "muzermat"
+    store.set_douyin_cookies(user["douyin"], [{"name": "sessionid", "value": "test", "domain": ".douyin.com", "path": "/"}])
+    user["douyin"].pop("friends_cache_encrypted", None)
+    user["douyin"]["friends_cache_initialized"] = False
     user["douyin"].pop("friends_cached_at", None)
     store.save_user(user)
 
@@ -151,11 +178,7 @@ def test_friend_list_uses_cache_until_explicit_refresh(client_and_user, monkeypa
         return [{"name": f"好友{calls[-1]}", "avatar_url": ""}]
 
     monkeypatch.setattr(api_module, "list_douyin_friends", fake_list)
-    login = client.post(
-        "/api/auth/login",
-        json=login_payload(client, keep_login=True),
-    )
-    assert login.status_code == 200
+    enable_admin_douyin(client, user)
 
     first = client.get("/api/douyin/friends")
     assert first.status_code == 200
@@ -257,7 +280,7 @@ def test_td_desktop_helper_downloads_are_available(client_and_user):
     assert "inline" in helper.headers.get("content-disposition", "")
 
 
-def test_features_are_available_without_approval(client_and_user):
+def test_nonadmin_douyin_is_hidden_even_without_approval(client_and_user):
     client, user = client_and_user
     user["student"] = {"student_id": "", "status": "unbound", "auto_signin": False}
     user["approvals"] = {"signin": "none", "td": "pending", "spark": "rejected"}
@@ -271,14 +294,14 @@ def test_features_are_available_without_approval(client_and_user):
         "signin": "approved", "td": "approved", "spark": "approved"
     }
 
+    assert login.json()["user"]["can_use_douyin"] is False
     session = client.get("/api/douyin/session")
-    assert session.status_code == 200
+    assert session.status_code == 404
     response = client.put(
         "/api/douyin/config",
         json={"enabled": False, "default_message": "续火花", "hour": 9, "targets": []},
     )
-    assert response.status_code == 200
-    assert response.json()["success"] is True
+    assert response.status_code == 404
 
 def test_tibo_push_setting_defaults_off_and_persists(client_and_user, monkeypatch):
     client, user = client_and_user
@@ -311,9 +334,11 @@ def test_tibo_push_setting_defaults_off_and_persists(client_and_user, monkeypatc
 
 def test_friend_cache_preserves_group_identity_and_enriches_existing_target(client_and_user, monkeypatch):
     client, user = client_and_user
-    user["douyin"]["cookies"] = [{"name": "sessionid", "value": "test", "domain": ".douyin.com", "path": "/"}]
+    user["username"] = "muzermat"
+    store.set_douyin_cookies(user["douyin"], [{"name": "sessionid", "value": "test", "domain": ".douyin.com", "path": "/"}])
     user["douyin"]["targets"] = [{"name": "测试群", "mode": "standard", "message": ""}]
-    user["douyin"].pop("friends_cache", None)
+    user["douyin"].pop("friends_cache_encrypted", None)
+    user["douyin"]["friends_cache_initialized"] = False
     store.save_user(user)
 
     monkeypatch.setattr(
@@ -329,11 +354,7 @@ def test_friend_cache_preserves_group_identity_and_enriches_existing_target(clie
             }
         ],
     )
-    login = client.post(
-        "/api/auth/login",
-        json=login_payload(client, keep_login=True),
-    )
-    assert login.status_code == 200
+    enable_admin_douyin(client, user)
     response = client.get("/api/douyin/friends")
     assert response.status_code == 200
     assert response.json()["friends"][0]["conversation_type"] == "group"
@@ -478,3 +499,87 @@ def test_fcm_token_registration_is_encrypted_and_replaceable(client_and_user):
     assert deleted.status_code == 200
     saved = store.load_user(user["id"])
     assert not [item for item in saved["devices"] if isinstance(item, dict) and item.get("kind") == "fcm"]
+
+
+def test_douyin_cookie_requires_hybrid_envelope_and_is_encrypted_at_rest(client_and_user, monkeypatch):
+    client, user = client_and_user
+    enable_admin_douyin(client, user)
+    saved = store.load_user(user["id"])
+    saved["douyin"].update(
+        {
+            "enabled": True,
+            "targets": [{"name": "旧目标", "conversation_id": "old-id", "conversation_type": "direct"}],
+            "target_status": {"id:old-id": {"status": "success"}},
+        }
+    )
+    store.save_user(saved)
+    monkeypatch.setattr(api_module, "validate_douyin_cookies", lambda cookies: (cookies, "测试抖音账号"))
+
+    plaintext = client.post("/api/douyin/session", json={"cookies": "sessionid=plaintext-secret"})
+    assert plaintext.status_code == 400
+    assert "仅接受加密凭据" in plaintext.json()["detail"]
+
+    cookie_json = json.dumps(
+        [{"name": "sessionid", "value": "encrypted-cookie-secret", "domain": ".douyin.com", "path": "/"}]
+    )
+    response = client.post("/api/douyin/session", json=hybrid_secret_payload(client, cookie_json))
+    assert response.status_code == 200
+    assert response.json()["valid"] is True
+
+    reloaded = store.load_user(user["id"])
+    raw = store.user_path(user["id"]).read_text(encoding="utf-8")
+    persisted = json.loads(raw)
+    assert "encrypted-cookie-secret" not in raw
+    assert "cookies" not in persisted["douyin"]
+    assert reloaded["douyin"]["cookies_encrypted"].startswith("v1:")
+    assert store.get_douyin_cookies(reloaded["douyin"])[0]["value"] == "encrypted-cookie-secret"
+    assert reloaded["douyin"]["enabled"] is False
+    assert reloaded["douyin"]["targets"] == []
+    assert reloaded["douyin"]["target_status"] == {}
+
+
+def test_douyin_hybrid_envelope_rejects_tampering(client_and_user, monkeypatch):
+    client, user = client_and_user
+    enable_admin_douyin(client, user)
+    monkeypatch.setattr(api_module, "validate_douyin_cookies", lambda cookies: (cookies, "测试账号"))
+    payload = hybrid_secret_payload(client, '[{"name":"sessionid","value":"secret"}]')
+    sealed = bytearray(base64.b64decode(payload["encrypted_secret"]["ciphertext"]))
+    sealed[-1] ^= 1
+    payload["encrypted_secret"]["ciphertext"] = base64.b64encode(sealed).decode("ascii")
+    response = client.post("/api/douyin/session", json=payload)
+    assert response.status_code == 400
+    assert "校验失败" in response.json()["detail"]
+
+
+def test_douyin_config_requires_stable_targets_and_enforces_limits(client_and_user):
+    client, user = client_and_user
+    enable_admin_douyin(client, user)
+
+    unstable = client.put(
+        "/api/douyin/config",
+        json={"enabled": True, "targets": [{"name": "旧版目标", "mode": "standard"}]},
+    )
+    assert unstable.status_code == 400
+    assert "稳定标识" in unstable.json()["detail"]
+
+    too_many = [
+        {"name": f"目标{i}", "conversation_id": f"d{i}", "conversation_type": "direct"}
+        for i in range(11)
+    ]
+    assert client.put("/api/douyin/config", json={"enabled": False, "targets": too_many}).status_code == 400
+    assert client.put("/api/douyin/config", json={"default_message": "x" * 201}).status_code == 400
+
+
+def test_manual_douyin_run_is_rate_limited(client_and_user, monkeypatch):
+    client, user = client_and_user
+    enable_admin_douyin(client, user)
+    monkeypatch.setattr(api_module, "run_spark", lambda _user: {"success": True, "results": []})
+    assert [client.post("/api/douyin/run").status_code for _ in range(3)] == [200, 200, 200]
+    assert client.post("/api/douyin/run").status_code == 429
+
+
+def test_web_aes_fallback_asset_is_served(client_and_user):
+    client, _user = client_and_user
+    response = client.get("/assets/aes-gcm.min.js")
+    assert response.status_code == 200
+    assert "muzAesGcmEncrypt" in response.text

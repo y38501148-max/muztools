@@ -23,6 +23,7 @@ data class HomeUiState(
     val autoSigninEnabled: Boolean = false,
     val tdStatus: TdStatusResponse = TdStatusResponse(),
     val sunshineStatus: SunshineStatusResponse = SunshineStatusResponse(),
+    val canUseDouyin: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -89,7 +90,8 @@ class HomeViewModel(
                         scheduleItems = home.schedule.schedule,
                         autoSigninEnabled = home.schedule.enabled || home.student.autoSignin,
                         tdStatus = home.td ?: current.tdStatus,
-                        sunshineStatus = home.sunshine ?: current.sunshineStatus
+                        sunshineStatus = home.sunshine ?: current.sunshineStatus,
+                        canUseDouyin = home.user.canUseDouyin
                     )
                 }
                 return@launch
@@ -115,7 +117,7 @@ class HomeViewModel(
 
             userRes.onSuccess { u ->
                 prefs.displayName = u.displayName
-                _uiState.update { it.copy(displayName = u.displayName.ifBlank { u.username }) }
+                _uiState.update { it.copy(displayName = u.displayName.ifBlank { u.username }, canUseDouyin = u.canUseDouyin) }
             }
 
             lastLoadedAt = System.currentTimeMillis()

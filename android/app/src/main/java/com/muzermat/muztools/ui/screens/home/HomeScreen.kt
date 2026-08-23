@@ -212,14 +212,18 @@ fun HomeScreen(
                             onClick = { onNavigateToFeature("signin") },
                             modifier = Modifier.weight(1f)
                         )
-                        QuickActionItem(
-                            title = "抖音续火花",
-                            subtitle = "自动互动",
-                            icon = Icons.Default.ElectricBolt,
-                            color = Color(0xFFE65100),
-                            onClick = { onNavigateToFeature("spark") },
-                            modifier = Modifier.weight(1f)
-                        )
+                        if (uiState.canUseDouyin) {
+                            QuickActionItem(
+                                title = "抖音续火花",
+                                subtitle = "自动互动",
+                                icon = Icons.Default.ElectricBolt,
+                                color = Color(0xFFE65100),
+                                onClick = { onNavigateToFeature("spark") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        } else {
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
 

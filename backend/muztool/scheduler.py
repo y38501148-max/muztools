@@ -10,7 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .notify import push_notification, signin_success_message
 from .signin_core import TZ_BEIJING, safe_execute_sign_in, safe_fetch_schedule
-from .store import iter_users, save_user, student_runtime
+from .store import can_use_douyin, iter_users, save_user, student_runtime
 
 
 scheduler = AsyncIOScheduler(timezone=TZ_BEIJING)
@@ -54,6 +54,8 @@ def should_run_douyin_auto(cfg: dict[str, Any], now: datetime | None = None) -> 
         return False
 
     today = current.date()
+    if str(cfg.get("auto_blocked_date") or "") == today.isoformat():
+        return False
     last_auto_run = _parse_beijing_iso(cfg.get("last_auto_run"))
     if last_auto_run and last_auto_run.date() == today:
         return False
@@ -128,43 +130,88 @@ async def auto_checkin_executor() -> None:
 
 
 async def douyin_hourly() -> None:
-    """Run due automatic spark jobs.
-
-    The historical function name is kept to avoid breaking imports, while the
-    scheduler now invokes it every minute and catches up after the configured
-    time if the service was temporarily unavailable.
-    """
-    from .douyin import run_spark
+    """Run due automatic spark jobs with per-target progress and safety stops."""
+    from .douyin import DouyinBusy, target_identity, validate_spark_targets, run_spark
 
     for user in iter_users():
         cfg = user.setdefault("douyin", {})
+        if not can_use_douyin(user):
+            if cfg.get("enabled"):
+                cfg["enabled"] = False
+                cfg["disabled_reason"] = "temporary_admin_only"
+                save_user(user)
+            continue
         now = datetime.now(TZ_BEIJING)
         if not should_run_douyin_auto(cfg, now):
+            continue
+
+        today = now.date().isoformat()
+        if cfg.get("auto_progress_date") != today:
+            cfg["auto_progress_date"] = today
+            cfg["auto_completed_target_keys"] = []
+            cfg.pop("auto_blocked_date", None)
+            cfg.pop("auto_blocked_reason", None)
+
+        try:
+            configured_targets = validate_spark_targets(
+                [item for item in cfg.get("targets") or [] if isinstance(item, dict)],
+                require_identity=True,
+            )
+        except Exception as exc:
+            cfg["auto_blocked_date"] = today
+            cfg["auto_blocked_reason"] = "target_invalid"
+            cfg["last_auto_attempt"] = now.isoformat(timespec="seconds")
+            save_user(user)
+            push_notification(user, "抖音续火花", f"自动任务已暂停：{exc}", "douyin")
+            continue
+
+        completed_keys = {str(value) for value in cfg.get("auto_completed_target_keys") or []}
+        remaining = [target for target in configured_targets if target_identity(target) not in completed_keys]
+        if not remaining:
+            cfg["last_auto_run"] = now.isoformat(timespec="seconds")
+            save_user(user)
             continue
 
         cfg["last_auto_attempt"] = now.isoformat(timespec="seconds")
         save_user(user)
         try:
-            result = await asyncio.to_thread(run_spark, user)
-            rows = result.get("results") if isinstance(result, dict) else []
-            rows = rows if isinstance(rows, list) else []
-            succeeded = sum(1 for item in rows if isinstance(item, dict) and item.get("ok"))
-            total = len(rows)
-            completed = bool(result.get("success")) or succeeded > 0
-            if completed:
-                cfg["last_auto_run"] = datetime.now(TZ_BEIJING).isoformat(timespec="seconds")
-            save_user(user)
-
-            if result.get("success"):
-                body = f"今日自动续火花已完成，共发送 {succeeded} 条。"
-            elif succeeded:
-                body = f"今日自动续火花已执行，成功 {succeeded} 条、失败 {max(total - succeeded, 0)} 条。"
-            else:
-                body = "本次自动续火花未成功，将在稍后自动重试。"
-            push_notification(user, "抖音续火花", body, "douyin")
+            result = await asyncio.to_thread(run_spark, user, targets_override=remaining, record_run=False)
+        except DouyinBusy:
+            # A manual task is still running. Leave progress untouched and retry later.
+            continue
         except Exception:
+            cfg["auto_blocked_date"] = today
+            cfg["auto_blocked_reason"] = "unexpected"
             save_user(user)
-            push_notification(user, "抖音续火花", "自动续火花执行失败，将在稍后自动重试。", "douyin")
+            push_notification(user, "抖音续火花", "自动任务出现未分类错误，今日已停止重试。", "douyin")
+            continue
+
+        rows = result.get("results") if isinstance(result, dict) else []
+        rows = rows if isinstance(rows, list) else []
+        succeeded_keys = {str(item.get("target_key") or "") for item in rows if isinstance(item, dict) and item.get("ok")}
+        completed_keys.update(key for key in succeeded_keys if key)
+        cfg["auto_completed_target_keys"] = sorted(completed_keys)
+
+        all_keys = {target_identity(target) for target in configured_targets}
+        succeeded = len(succeeded_keys)
+        failed_rows = [item for item in rows if isinstance(item, dict) and not item.get("ok")]
+        halt_reason = str(result.get("halt_reason") or "")
+        non_retryable = any(not item.get("retryable") for item in failed_rows)
+
+        if all_keys and all_keys.issubset(completed_keys):
+            cfg["last_auto_run"] = datetime.now(TZ_BEIJING).isoformat(timespec="seconds")
+            cfg.pop("auto_blocked_date", None)
+            cfg.pop("auto_blocked_reason", None)
+            body = f"今日自动续火花已完成，本次成功 {succeeded} 条。"
+        elif halt_reason or non_retryable:
+            cfg["auto_blocked_date"] = today
+            cfg["auto_blocked_reason"] = halt_reason or str(failed_rows[0].get("status") or "failed")
+            body = f"自动任务已安全暂停：本次成功 {succeeded} 条，剩余目标今日不再自动重试。"
+        else:
+            remaining_count = len(all_keys - completed_keys)
+            body = f"本次成功 {succeeded} 条，剩余 {remaining_count} 条将在稍后仅重试失败目标。"
+        save_user(user)
+        push_notification(user, "抖音续火花", body, "douyin")
 
 
 
