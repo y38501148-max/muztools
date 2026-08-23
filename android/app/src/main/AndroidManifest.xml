@@ -36,7 +36,8 @@
         <service
             android:name=".service.MuzNotificationService"
             android:exported="false"
-            android:foregroundServiceType="remoteMessaging" />
+            android:foregroundServiceType="remoteMessaging"
+            android:stopWithTask="false" />
 
         <service
             android:name=".service.MuzFirebaseMessagingService"

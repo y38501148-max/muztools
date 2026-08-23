@@ -9,6 +9,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.muzermat.muztools.MainActivity
 import com.muzermat.muztools.MuzApplication
@@ -17,6 +18,8 @@ import com.muzermat.muztools.data.model.NotificationItem
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.*
 import java.util.concurrent.TimeUnit
 
@@ -25,6 +28,9 @@ class MuzNotificationService : Service() {
         private const val LIVE_CHANNEL_ID = "muztools_live_service"
         private const val NOTICE_CHANNEL_ID = "muztools_notifications"
         private const val FOREGROUND_ID = 10001
+        private const val RECONNECT_DELAY_MS = 5_000L
+        private const val FALLBACK_SYNC_INTERVAL_MS = 30_000L
+        private const val SOCKET_STALE_AFTER_MS = 70_000L
 
         fun start(context: Context) {
             val intent = Intent(context, MuzNotificationService::class.java)
@@ -47,6 +53,9 @@ class MuzNotificationService : Service() {
         .build()
     private var socket: WebSocket? = null
     private var reconnectJob: Job? = null
+    private var maintenanceJob: Job? = null
+    private val syncMutex = Mutex()
+    @Volatile private var lastSocketActivityAt = 0L
 
     private val app: MuzApplication get() = application as MuzApplication
 
@@ -54,6 +63,7 @@ class MuzNotificationService : Service() {
         super.onCreate()
         createChannels()
         startForeground(FOREGROUND_ID, foregroundNotification())
+        startMaintenanceLoop()
         connect()
     }
 
@@ -62,6 +72,7 @@ class MuzNotificationService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        startMaintenanceLoop()
         connect()
         return START_STICKY
     }
@@ -70,6 +81,7 @@ class MuzNotificationService : Service() {
 
     override fun onDestroy() {
         reconnectJob?.cancel()
+        maintenanceJob?.cancel()
         socket?.close(1000, "service stopped")
         socket = null
         scope.cancel()
@@ -86,12 +98,15 @@ class MuzNotificationService : Service() {
             else -> "ws://$base"
         }
         val url = "$wsBase/api/notifications/ws?token=${Uri.encode(token)}"
+        lastSocketActivityAt = SystemClock.elapsedRealtime()
         socket = socketClient.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                lastSocketActivityAt = SystemClock.elapsedRealtime()
                 scope.launch { syncUnreadNotifications() }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                lastSocketActivityAt = SystemClock.elapsedRealtime()
                 runCatching { json.decodeFromString<LiveEnvelope>(text) }
                     .getOrNull()?.item?.let(::deliver)
             }
@@ -106,17 +121,37 @@ class MuzNotificationService : Service() {
         socket = null
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
-            delay(5_000)
+            delay(RECONNECT_DELAY_MS)
             connect()
         }
     }
 
-    private suspend fun syncUnreadNotifications() {
+    private fun startMaintenanceLoop() {
+        if (maintenanceJob?.isActive == true) return
+        maintenanceJob = scope.launch {
+            while (isActive) {
+                delay(FALLBACK_SYNC_INTERVAL_MS)
+                syncUnreadNotifications()
+                val currentSocket = socket
+                val inactiveFor = SystemClock.elapsedRealtime() - lastSocketActivityAt
+                if (currentSocket == null) {
+                    connect()
+                } else if (inactiveFor >= SOCKET_STALE_AFTER_MS) {
+                    socket = null
+                    currentSocket.cancel()
+                    connect()
+                }
+            }
+        }
+    }
+
+    private suspend fun syncUnreadNotifications() = syncMutex.withLock {
         app.apiClient.getNotifications().onSuccess { items ->
             items.filter { !it.read }.take(20).asReversed().forEach(::deliver)
         }
     }
 
+    @Synchronized
     private fun deliver(item: NotificationItem) {
         val prefs = app.preferencesManager
         if (prefs.wasNotificationDelivered(item.id)) return
@@ -147,7 +182,7 @@ class MuzNotificationService : Service() {
     private fun foregroundNotification() = NotificationCompat.Builder(this, LIVE_CHANNEL_ID)
         .setSmallIcon(R.mipmap.ic_launcher)
         .setContentTitle("盐的工具箱通知服务")
-        .setContentText("正在保持连接，以便及时接收系统提示")
+        .setContentText("正在保持实时连接，并定期检查遗漏消息")
         .setOngoing(true)
         .setPriority(NotificationCompat.PRIORITY_LOW)
         .setContentIntent(
