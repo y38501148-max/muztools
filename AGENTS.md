@@ -167,7 +167,7 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.3 为 `versionCode 20`；v1.3.2 为 `versionCode 19`。
+发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.4 为 `versionCode 21`；v1.3.3 为 `versionCode 20`。
 
 ## 服务端部署
 
@@ -200,14 +200,14 @@ ssh server2 'cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data .ven
 ## Android 热更新
 
 ```bash
-cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.1.apk
-scp release/muztools-1.3.1.apk server2:/tmp/
+cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.4.apk
+scp release/muztools-1.3.4.apk server2:/tmp/
 ssh server2 \
   "cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data \
-   .venv/bin/muz-admin set-version 1.3.1 --code 18 \
-   --title 'MuzTool v1.3.1' \
-   --message 'FCM 后台推送、邀请码注册与凭据加密' \
-   --apk /tmp/muztools-1.3.0.apk"
+   .venv/bin/muz-admin set-version 1.3.4 --code 21 \
+   --title 'MuzTool v1.3.4' \
+   --message '后台通知保活、30 秒未读补拉与失效连接自动重建' \
+   --apk /tmp/muztools-1.3.4.apk"
 ```
 
 除非用户明确要求，不使用 `--force`，也不提高 `min_version_code`。

@@ -15,10 +15,10 @@ MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin enable-signin <user>
 发布客户端版本：
 
 ```bash
-MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin set-version 1.3.1 \
-  --code 18 --title 'MuzTool v1.3.1' \
-  --message 'FCM 后台推送、邀请码注册与凭据加密' \
-  --apk /tmp/muztools-1.3.1.apk
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin set-version 1.3.4 \
+  --code 21 --title 'MuzTool v1.3.4' \
+  --message '后台通知保活、30 秒未读补拉与失效连接自动重建' \
+  --apk /tmp/muztools-1.3.4.apk
 ```
 
 不要在命令输出或日志中打印密码、Cookie、Token 或邀请码正文。

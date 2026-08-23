@@ -1,4 +1,4 @@
-# muz-admin 指令集（v1.3.3）
+# muz-admin 指令集（v1.3.4）
 
 `muz-admin` 是 MuzTool 服务端管理工具。生产环境执行时必须使用与服务一致的数据目录：
 
@@ -18,7 +18,7 @@ muz-admin show <用户名|学号|用户ID>
 - `list` / `users`：列出所有用户的基础状态。
 - `show`：查看单个用户的公开配置，不输出密码、Cookie、Token 或其他敏感凭据。
 
-v1.3.3 已取消功能审批。既有账号和邀请码注册的新账号均默认拥有功能权限，不再提供 `pending`、`approve-*` 或 `reject-*` 指令。
+v1.3.4 延续邀请码权限体系；功能审批仍保持取消。既有账号和邀请码注册的新账号均默认拥有功能权限，不再提供 `pending`、`approve-*` 或 `reject-*` 指令。
 
 ## 邀请码
 
@@ -69,14 +69,14 @@ muz-admin set-version <version> --code <versionCode> [选项]
 - `--min-code <n>`：最低允许版本码；
 - `--force`：强制更新，仅在用户明确要求时使用。
 
-v1.3.3 示例：
+v1.3.4 示例：
 
 ```bash
-MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin set-version 1.3.3 \
-  --code 20 \
-  --title 'MuzTool v1.3.3' \
-  --message 'Firebase FCM 配置、后台推送链路与双端发布' \
-  --apk /tmp/muztools-1.3.3.apk
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin set-version 1.3.4 \
+  --code 21 \
+  --title 'MuzTool v1.3.4' \
+  --message '后台通知保活、30 秒未读补拉与失效连接自动重建' \
+  --apk /tmp/muztools-1.3.4.apk
 ```
 
 ## 安全注意事项
