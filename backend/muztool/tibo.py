@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -20,6 +22,7 @@ TIBO_PROXY_URL = os.environ.get("MUZTOOLS_TIBO_PROXY", "http://127.0.0.1:7890").
 TIBO_NOTICE = "tibo发布了一条与重置有关的推特，请点击查看"
 TIBO_STATE_PATH = DATA_DIR / "tibo_monitor.json"
 TWITTER_EPOCH_MS = 1_288_834_974_657
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -63,16 +66,27 @@ class _ProfileHtmlParser(HTMLParser):
         self.article_depth = 0
         self.current: dict[str, str] | None = None
         self.posts: list[TiboPost] = []
+        self._capture_text = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = {key: value or "" for key, value in attrs}
         if tag == "article":
             if self.article_depth == 0:
                 post_id = values.get("data-tweet-id", "")
-                self.current = {"id": post_id, "text": "", "url": "", "date": ""}
+                self.current = {"id": post_id, "text": "", "url": "", "date": "", "author_match": ""}
             self.article_depth += 1
             return
-        if tag != "meta" or self.article_depth != 1 or self.current is None:
+        if self.article_depth != 1 or self.current is None:
+            return
+        if tag == "a" and values.get("href", "").rstrip("/").casefold() == f"/{TIBO_USERNAME}".casefold():
+            self.current["author_match"] = "1"
+            return
+        if tag == "span":
+            classes = set(values.get("class", "").split())
+            if {"whitespace-pre-wrap", "break-words", "text-inherit", "font-inherit"}.issubset(classes):
+                self._capture_text = True
+            return
+        if tag != "meta":
             return
         prop = values.get("itemprop", "")
         content = values.get("content", "")
@@ -80,10 +94,17 @@ class _ProfileHtmlParser(HTMLParser):
             self.current["text"] = content
         elif prop == "url" and f"/{TIBO_USERNAME}/status/" in content.casefold():
             self.current["url"] = content
+            self.current["author_match"] = "1"
         elif prop == "datePublished":
             self.current["date"] = content
 
+    def handle_data(self, data: str) -> None:
+        if self._capture_text and self.article_depth == 1 and self.current is not None:
+            self.current["text"] += data
+
     def handle_endtag(self, tag: str) -> None:
+        if tag == "span" and self._capture_text:
+            self._capture_text = False
         if tag != "article" or self.article_depth <= 0:
             return
         self.article_depth -= 1
@@ -91,16 +112,20 @@ class _ProfileHtmlParser(HTMLParser):
             return
         raw = self.current
         self.current = None
+        self._capture_text = False
         post_id = raw.get("id", "")
         text = raw.get("text", "").strip()
-        if not post_id.isdigit() or not text:
+        if not post_id.isdigit() or not text or not raw.get("author_match"):
             return
         date_text = raw.get("date", "")
         try:
             created_at = datetime.fromisoformat(date_text.replace("Z", "+00:00")) if date_text else snowflake_created_at(post_id)
         except ValueError:
             created_at = snowflake_created_at(post_id)
-        url = raw.get("url") or f"https://x.com/{TIBO_USERNAME}/status/{post_id}"
+        # Profile cards may expose engagement URLs such as /retweets as the
+        # last itemprop=url. Always use the canonical status URL for thread
+        # expansion and user-facing links.
+        url = f"https://x.com/{TIBO_USERNAME}/status/{post_id}"
         self.posts.append(TiboPost(post_id, created_at.astimezone(timezone.utc), text, url))
 
 
@@ -146,12 +171,13 @@ async def fetch_recent_tibo_posts(
     now: datetime,
     lookback_hours: int = 24,
 ) -> FetchResult:
-    """Adapt the original Tibo plugin to X's server-rendered profile page.
+    """Fetch Tibo's recent posts and self-replies from public X HTML.
 
-    The original Playwright article extraction stopped working after X moved
-    profile cards into server-rendered schema.org markup. Reading those cards
-    directly is faster and still preserves top-level post/quote filtering.
+    The anonymous profile HTML only exposes top-level posts. Reset timing is
+    sometimes published as a self-reply, so recent conversation pages are also
+    scanned and merged by tweet ID.
     """
+    del seen_ids  # State filtering happens after all profile/thread posts merge.
     proxy = TIBO_PROXY_URL or None
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/136 Safari/537.36",
@@ -161,12 +187,33 @@ async def fetch_recent_tibo_posts(
     async with httpx.AsyncClient(proxy=proxy, follow_redirects=True, timeout=30, headers=headers) as client:
         response = await client.get(f"https://x.com/{TIBO_USERNAME}")
         response.raise_for_status()
-    parsed = parse_profile_html(response.text)
-    cutoff = now.astimezone(timezone.utc) - timedelta(hours=lookback_hours)
+        profile_posts = parse_profile_html(response.text)
+
+        async def fetch_thread(post: TiboPost) -> tuple[TiboPost, ...]:
+            try:
+                thread_response = await client.get(post.url)
+                thread_response.raise_for_status()
+                return parse_profile_html(thread_response.text)
+            except Exception:
+                logger.warning("Could not fetch Tibo thread %s", post.id, exc_info=True)
+                return ()
+
+        # X's anonymous profile currently returns only a small page. Scanning
+        # each returned conversation catches recent Tibo self-replies without
+        # accepting replies authored by other accounts.
+        thread_results = await asyncio.gather(*(fetch_thread(post) for post in profile_posts[:8]))
+
+    by_id = {post.id: post for post in profile_posts}
+    for thread_posts in thread_results:
+        for post in thread_posts:
+            by_id[post.id] = post
+
+    current_utc = now.astimezone(timezone.utc)
+    cutoff = current_utc - timedelta(hours=lookback_hours)
     discovered: list[str] = []
     posts: list[TiboPost] = []
-    for post in parsed:
-        if post.created_at > now.astimezone(timezone.utc) + timedelta(minutes=5):
+    for post in sorted(by_id.values(), key=lambda item: int(item.id), reverse=True):
+        if post.created_at > current_utc + timedelta(minutes=5):
             continue
         discovered.append(post.id)
         if post.created_at < cutoff or not is_reset_post(post.text):

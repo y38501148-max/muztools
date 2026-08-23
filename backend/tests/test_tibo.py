@@ -158,3 +158,35 @@ def test_scheduler_checks_tibo_immediately_and_hourly(monkeypatch):
     assert tibo_job[2]["next_run_time"].tzinfo is not None
     assert tibo_job[2]["max_instances"] == 1
     assert tibo_job[2]["coalesce"] is True
+
+
+def test_status_thread_parser_reads_tibo_self_reply_and_uses_canonical_url():
+    html = """
+    <article data-tweet-id="2091407991736332689">
+      <a href="/thsottiaux">Tibo</a>
+      <span class="font-chirp max-w-full whitespace-pre-wrap break-words text-inherit text-[length:inherit] font-inherit">Parent mentions a full reset.</span>
+    </article>
+    <article data-tweet-id="2091412393368945027">
+      <a href="/thsottiaux">Tibo</a>
+      <span class="font-chirp max-w-full whitespace-pre-wrap break-words text-inherit text-[length:inherit] font-inherit">Reset will land around 14pm PST tomorrow.</span>
+    </article>
+    <article data-tweet-id="2091419999999999999">
+      <a href="/someone_else">Someone else</a>
+      <span class="font-chirp max-w-full whitespace-pre-wrap break-words text-inherit text-[length:inherit] font-inherit">reset from another author</span>
+    </article>
+    """
+    posts = tibo.parse_profile_html(html)
+    assert [item.id for item in posts] == ["2091407991736332689", "2091412393368945027"]
+    assert posts[1].text == "Reset will land around 14pm PST tomorrow."
+    assert posts[1].url == "https://x.com/thsottiaux/status/2091412393368945027"
+
+
+def test_profile_engagement_url_is_normalized_to_status_url():
+    html = """
+    <article data-tweet-id="2091407991736332689">
+      <meta itemprop="url" content="https://x.com/thsottiaux/status/2091407991736332689/retweets">
+      <meta itemprop="text" content="A full reset is planned">
+    </article>
+    """
+    post = tibo.parse_profile_html(html)[0]
+    assert post.url == "https://x.com/thsottiaux/status/2091407991736332689"
