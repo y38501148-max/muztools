@@ -181,7 +181,7 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.8 为 `versionCode 25`；v1.3.7 为 `versionCode 24`。
+发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.9 为 `versionCode 26`；v1.3.8 为 `versionCode 25`。
 
 ## 服务端部署
 
@@ -214,14 +214,14 @@ ssh server2 'cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data .ven
 ## Android 热更新
 
 ```bash
-cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.8.apk
-scp release/muztools-1.3.8.apk server2:/tmp/
+cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.9.apk
+scp release/muztools-1.3.9.apk server2:/tmp/
 ssh server2 \
   "cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data \
-   .venv/bin/muz-admin set-version 1.3.8 --code 25 \
-   --title 'MuzTool v1.3.8' \
-   --message '修复 Android 后台通知保活并新增管理员定向消息命令' \
-   --apk /tmp/muztools-1.3.8.apk"
+   .venv/bin/muz-admin set-version 1.3.9 --code 26 \
+   --title 'MuzTool v1.3.9' \
+   --message '将最近通知和续火花好友名单改为固定高度可滚动列表' \
+   --apk /tmp/muztools-1.3.9.apk"
 ```
 
 除非用户明确要求，不使用 `--force`，也不提高 `min_version_code`。

@@ -1,8 +1,8 @@
 # MuzTool（盐的工具箱）
 
-MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的个人工具箱。当前版本为 **v1.3.8**。
+MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的个人工具箱。当前版本为 **v1.3.9**。
 
-## v1.3.8 主要能力
+## v1.3.9 主要能力
 
 - **邀请码注册**：新账号必须填写一次性邀请码；无邀请码、邀请码无效或已使用时均无法注册。既有账号无需重新注册，默认保留全部功能权限。
 - **邀请码管理**：服务端可批量生成并加密保存邀请码；仅 `muzermat` 账号可在功能区随机领取一个尚未使用的邀请码。
@@ -79,20 +79,20 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-v1.3.8 使用：
+v1.3.9 使用：
 
-- `versionName = "1.3.8"`
-- `versionCode = 25`
+- `versionName = "1.3.9"`
+- `versionCode = 26`
 
 ## 热更新发布
 
 ```bash
 muz-admin version
-muz-admin set-version 1.3.8 \
-  --code 25 \
-  --title "MuzTool v1.3.8" \
-  --message "修复 Android 后台通知保活并新增管理员定向消息命令" \
-  --apk /path/to/muztools-1.3.8.apk
+muz-admin set-version 1.3.9 \
+  --code 26 \
+  --title "MuzTool v1.3.9" \
+  --message "将最近通知和续火花好友名单改为固定高度可滚动列表" \
+  --apk /path/to/muztools-1.3.9.apk
 ```
 
 完整开发、测试、部署和双端同步要求见 `AGENTS.md`；管理命令说明见 `MUZ-ADMIN.md`。

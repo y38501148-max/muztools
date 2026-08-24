@@ -16,10 +16,10 @@ MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin enable-signin <user>
 发布客户端版本：
 
 ```bash
-MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin set-version 1.3.8 \
-  --code 25 --title 'MuzTool v1.3.8' \
-  --message '修复 Android 后台通知保活并新增管理员定向消息命令' \
-  --apk /tmp/muztools-1.3.8.apk
+MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin set-version 1.3.9 \
+  --code 26 --title 'MuzTool v1.3.9' \
+  --message '将最近通知和续火花好友名单改为固定高度可滚动列表' \
+  --apk /tmp/muztools-1.3.9.apk
 ```
 
 不要在命令输出或日志中打印密码、Cookie、Token 或邀请码正文。

@@ -303,16 +303,16 @@ fun SparkScreen(viewModel: SparkViewModel) {
                     }
                 }
             } else {
-                items(uiState.config.targets, key = { it.identityKey() }) { target ->
-                    SparkTargetCard(
-                        target = target,
+                item {
+                    SparkTargetListViewport(
+                        targets = uiState.config.targets,
                         defaultMessage = uiState.config.defaultMessage,
-                        status = sessionState?.targetStatus?.get(target.identityKey()),
-                        isTesting = uiState.runningTargetKey == target.identityKey(),
+                        targetStatus = sessionState?.targetStatus.orEmpty(),
+                        runningTargetKey = uiState.runningTargetKey,
                         testEnabled = uiState.session.valid && !uiState.isRunningSpark && uiState.runningTargetKey.isBlank(),
-                        onTest = { pendingTestTarget = target },
-                        onEdit = { editingTarget = target },
-                        onDelete = { viewModel.removeTarget(target) }
+                        onTest = { pendingTestTarget = it },
+                        onEdit = { editingTarget = it },
+                        onDelete = viewModel::removeTarget
                     )
                 }
             }
@@ -423,6 +423,49 @@ fun SparkScreen(viewModel: SparkViewModel) {
             },
             dismissButton = { TextButton(onClick = { showCookieDialog = false }) { Text("取消") } }
         )
+    }
+}
+
+@Composable
+private fun SparkTargetListViewport(
+    targets: List<SparkTarget>,
+    defaultMessage: String,
+    targetStatus: Map<String, DouyinTargetStatus>,
+    runningTargetKey: String,
+    testEnabled: Boolean,
+    onTest: (SparkTarget) -> Unit,
+    onEdit: (SparkTarget) -> Unit,
+    onDelete: (SparkTarget) -> Unit
+) {
+    @Composable
+    fun TargetRow(target: SparkTarget) {
+        val identityKey = target.identityKey()
+        SparkTargetCard(
+            target = target,
+            defaultMessage = defaultMessage,
+            status = targetStatus[identityKey],
+            isTesting = runningTargetKey == identityKey,
+            testEnabled = testEnabled,
+            onTest = { onTest(target) },
+            onEdit = { onEdit(target) },
+            onDelete = { onDelete(target) }
+        )
+    }
+
+    if (targets.size <= 2) {
+        Column { targets.forEach { TargetRow(it) } }
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(340.dp),
+        contentPadding = PaddingValues(vertical = 2.dp)
+    ) {
+        items(targets, key = { it.identityKey() }) { target ->
+            TargetRow(target)
+        }
     }
 }
 

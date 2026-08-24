@@ -220,8 +220,8 @@ fun ProfileScreen(
                     }
                 }
             } else {
-                items(uiState.notifications) { notif ->
-                    NotificationCard(item = notif)
+                item {
+                    NotificationListViewport(items = uiState.notifications)
                 }
             }
 
@@ -275,7 +275,28 @@ fun ProfileScreen(
 }
 
 @Composable
-private fun NotificationCard(item: com.muzermat.muztools.data.model.NotificationItem) {
+private fun NotificationListViewport(items: List<NotificationItem>) {
+    if (items.size <= 3) {
+        Column {
+            items.forEach { item -> NotificationCard(item = item) }
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(300.dp),
+        contentPadding = PaddingValues(vertical = 2.dp)
+    ) {
+        items(items, key = { it.id }) { item ->
+            NotificationCard(item = item)
+        }
+    }
+}
+
+@Composable
+private fun NotificationCard(item: NotificationItem) {
     val uriHandler = LocalUriHandler.current
     val clickableModifier = if (item.url.startsWith("http://") || item.url.startsWith("https://")) {
         Modifier.clickable { uriHandler.openUri(item.url) }
