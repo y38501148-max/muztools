@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import random
 import threading
 from contextlib import contextmanager
 from typing import Any
@@ -23,6 +22,7 @@ MAX_COOKIE_COUNT = 200
 MAX_COOKIE_NAME_LENGTH = 256
 MAX_COOKIE_VALUE_LENGTH = 8192
 MAX_SPARK_TARGETS = 10
+SPARK_SEND_INTERVAL_MS = 10_000
 MAX_TARGET_NAME_LENGTH = 80
 MAX_MESSAGE_LENGTH = 200
 
@@ -658,10 +658,9 @@ def run_spark(
                     if halt_reason in {"security_challenge", "session_expired", "structure_changed", "ambiguous_send"}:
                         break
                     if index + 1 < len(targets):
-                        # Avoid a fixed machine-speed burst across several
-                        # conversations. This reduces, but cannot eliminate,
-                        # third-party platform automation risk.
-                        page.wait_for_timeout(random.randint(1_200, 3_600))
+                        # Send configured targets strictly in list order and
+                        # leave a fixed ten-second interval between targets.
+                        page.wait_for_timeout(SPARK_SEND_INTERVAL_MS)
             except Exception as exc:
                 if isinstance(exc, DouyinAutomationError):
                     halt_reason = exc.code

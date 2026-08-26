@@ -287,6 +287,9 @@ def authenticate(username: str, password: str) -> dict[str, Any]:
     return user
 
 
+SESSION_MAX_AGE = timedelta(days=30)
+
+
 def session_path(token: str) -> Path:
     return DATA_DIR / "sessions" / f"{token}.json"
 
@@ -294,7 +297,7 @@ def session_path(token: str) -> Path:
 def create_session(user_id: str) -> str:
     ensure_dirs()
     token = new_token()
-    _locked_write(session_path(token), {"token": token, "user_id": user_id, "created_at": now_iso()})
+    _locked_write(session_path(token), {"user_id": user_id, "created_at": now_iso()})
     return token
 
 
@@ -303,6 +306,14 @@ def user_from_token(token: str) -> dict[str, Any] | None:
         return None
     data = _locked_read(session_path(token), {})
     user_id = data.get("user_id")
+    created_at = str(data.get("created_at") or "")
+    try:
+        created = datetime.fromisoformat(created_at)
+    except ValueError:
+        return None
+    if datetime.now(TZ_BEIJING) - created > SESSION_MAX_AGE:
+        delete_session(token)
+        return None
     return load_user(user_id) if user_id else None
 
 

@@ -5,11 +5,9 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.muzermat.muztools.data.api.ApiClient
-import com.muzermat.muztools.data.model.StudentStatusResponse
 import com.muzermat.muztools.data.model.SunshineStatusResponse
+import com.muzermat.muztools.data.model.TdManualRequest
 import com.muzermat.muztools.data.model.TdStatusResponse
-import com.muzermat.muztools.data.td.TdClient
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,7 +17,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 data class TdUiState(
     val isLoading: Boolean = false,
@@ -108,27 +105,34 @@ class TdViewModel(
             val result = runCatching {
                 val entrancePhoto = readBytes(context, entranceUri)
                 val exitPhoto = readBytes(context, exitUri)
-                withContext(Dispatchers.IO) {
-                    TdClient.manualCheck(
-                        studentId = state.studentId,
-                        campus = state.selectedCampus,
-                        entrancePhoto = entrancePhoto,
-                        exitPhoto = exitPhoto,
-                        gapSeconds = state.gapMinutes * 60,
-                        entranceMachineId = state.entranceMachineId.toIntOrNull(),
-                        exitMachineId = state.exitMachineId.toIntOrNull(),
-                    )
+                val entranceFile = java.io.File.createTempFile("td-entrance-", ".jpg", context.cacheDir)
+                val exitFile = java.io.File.createTempFile("td-exit-", ".jpg", context.cacheDir)
+                try {
+                    entranceFile.writeBytes(entrancePhoto)
+                    exitFile.writeBytes(exitPhoto)
+                    apiClient.postTdPhotos(entranceFile, exitFile).getOrThrow()
+                    apiClient.postTdManual(
+                        TdManualRequest(
+                            campus = if (state.selectedCampus == "沙河") "shahe" else "xueyuanlu",
+                            entranceMachineId = state.entranceMachineId.ifBlank { null },
+                            exitMachineId = state.exitMachineId.ifBlank { null },
+                            gapSeconds = state.gapMinutes * 60,
+                        )
+                    ).getOrThrow()
+                } finally {
+                    entranceFile.delete()
+                    exitFile.delete()
                 }
             }
             _uiState.update { it.copy(isSubmittingManual = false) }
             result.fold(
                 onSuccess = { td ->
-                    _messageFlow.emit(td.message + (td.count?.let { "，当前次数 $it" } ?: ""))
+                    _messageFlow.emit(td.message ?: "TD 打卡请求已完成")
                     if (td.success) loadData(isRefresh = true)
                 },
                 onFailure = { err ->
                     _messageFlow.emit(
-                        "打卡失败: ${err.message ?: err.javaClass.simpleName}。请确认手机已连校园网。"
+                        "打卡失败: ${err.message ?: err.javaClass.simpleName}"
                     )
                 }
             )

@@ -122,6 +122,18 @@ def test_persistent_cookie_wins_when_browser_bearer_is_stale(client_and_user):
     assert restored.json()["token"] == response.json()["token"]
 
 
+def test_expired_bearer_session_is_rejected(client_and_user):
+    client, _user = client_and_user
+    login = client.post("/api/auth/login", json=login_payload(client, keep_login=False))
+    token = login.json()["token"]
+    session_file = store.session_path(token)
+    session = json.loads(session_file.read_text(encoding="utf-8"))
+    session["created_at"] = "2020-01-01T00:00:00+08:00"
+    store._locked_write(session_file, session)
+    response = client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+
 def test_student_payload_exposes_auto_signin_even_when_schedule_fails(client_and_user):
     client, user = client_and_user
     user["student"]["auto_signin"] = True
@@ -312,16 +324,58 @@ def test_tibo_history_endpoint_reads_cache_only(client_and_user, monkeypatch):
     assert response.json()["count"] == 1
 
 
-def test_td_desktop_helper_downloads_are_available(client_and_user):
-    client, _user = client_and_user
-    bridge = client.get("/downloads/td-web-bridge.py")
-    assert bridge.status_code == 200
-    assert "MuzTool computer-side TD bridge" in bridge.text
+def test_td_manual_runs_from_server_saved_photos(client_and_user, monkeypatch):
+    client, user = client_and_user
+    login = client.post("/api/auth/login", json=login_payload(client, keep_login=True))
+    assert login.status_code == 200
 
-    helper = client.get("/downloads/td-tampermonkey.user.js")
-    assert helper.status_code == 200
-    assert "GM_xmlhttpRequest" in helper.text
-    assert "inline" in helper.headers.get("content-disposition", "")
+    uploaded = client.post(
+        "/api/td/photos",
+        files={
+            "entrance": ("entrance.jpg", b"entrance-photo", "image/jpeg"),
+            "exit": ("exit.jpg", b"exit-photo", "image/jpeg"),
+        },
+    )
+    assert uploaded.status_code == 200
+    captured = {}
+
+    def fake_manual(student_id, entrance_id, exit_id, entrance_photo, exit_photo, gap_seconds):
+        captured.update({
+            "student_id": student_id,
+            "entrance_id": entrance_id,
+            "exit_id": exit_id,
+            "entrance_photo": entrance_photo,
+            "exit_photo": exit_photo,
+            "gap_seconds": gap_seconds,
+        })
+        return {"success": True, "message": "TD 手动打卡完成", "count": 7}
+
+    monkeypatch.setattr(api_module.td, "manual_td", fake_manual)
+    response = client.post(
+        "/api/td/manual",
+        json={"campus": "xueyuanlu", "entrance_machine_id": 4, "exit_machine_id": 5, "gap_seconds": 240},
+    )
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    assert captured == {
+        "student_id": "12345678",
+        "entrance_id": 4,
+        "exit_id": 5,
+        "entrance_photo": b"entrance-photo",
+        "exit_photo": b"exit-photo",
+        "gap_seconds": 240,
+    }
+    saved = store.load_user(user["id"])
+    assert saved["td"]["entrance_machine_id"] == 4
+    assert saved["td"]["exit_machine_id"] == 5
+
+
+def test_relay_only_mode_exposes_only_update_endpoints(client_and_user, monkeypatch):
+    client, _user = client_and_user
+    monkeypatch.setattr(config, "RELAY_ONLY", True)
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/api/app/version").status_code == 200
+    assert client.get("/api/auth/session").status_code == 404
 
 
 def test_nonadmin_douyin_is_hidden_even_without_approval(client_and_user):

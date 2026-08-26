@@ -304,25 +304,40 @@ def test_successful_run_persists_refreshed_cookies_and_records_status(monkeypatc
     playwright_package.sync_api = sync_api_module
     monkeypatch.setitem(sys.modules, "playwright", playwright_package)
     monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api_module)
-    monkeypatch.setattr(douyin, "_open_chat", lambda _browser, _cookies: (FakeContext(), object(), object()))
+    monkeypatch.setattr(douyin, "_open_chat", lambda _browser, _cookies: (FakeContext(), FakePage(), object()))
+    opened = []
+    waits = []
     monkeypatch.setattr(
         douyin,
         "_open_target_conversation",
-        lambda _page, target: (object(), {"conversation_id": target["conversation_id"], "conversation_type": target["conversation_type"]}),
+        lambda _page, target: (
+            opened.append(target["conversation_id"]) or object(),
+            {"conversation_id": target["conversation_id"], "conversation_type": target["conversation_type"]},
+        ),
     )
     monkeypatch.setattr(douyin, "_send_and_confirm", lambda *_args: None)
+
+    class FakePage:
+        def wait_for_timeout(self, milliseconds):
+            waits.append(milliseconds)
 
     user = {
         "id": "run-user",
         "douyin": {
             "default_message": "续火花",
-            "targets": [{"name": "目标", "conversation_id": "d1", "conversation_type": "direct"}],
+            "targets": [
+                {"name": "目标一", "conversation_id": "d1", "conversation_type": "direct"},
+                {"name": "目标二", "conversation_id": "d2", "conversation_type": "direct"},
+            ],
         },
     }
     result = run_spark(user)
     assert result["success"] is True
     assert result["retryable"] is False
     assert persisted == [refreshed]
+    assert opened == ["d1", "d2"]
+    assert waits == [douyin.SPARK_SEND_INTERVAL_MS]
     assert user["douyin"]["target_status"]["id:d1"]["status"] == "success"
-    assert user["douyin"]["last_result"]["success_count"] == 1
+    assert user["douyin"]["target_status"]["id:d2"]["status"] == "success"
+    assert user["douyin"]["last_result"]["success_count"] == 2
     assert user["douyin"]["last_result"]["failure_count"] == 0

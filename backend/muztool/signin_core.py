@@ -7,6 +7,7 @@ import fcntl
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import os
 from urllib.parse import urljoin, urlparse, unquote
 
 # Adapted from muz-bot duaa_core. Persistence is owned by muztool.store.
@@ -20,26 +21,29 @@ VPN_SERVICE_ID = "77726476706e69737468656265737421f9f44d9d342326526b0988e29d5136
 SIGNIN_MY_CENTER_URL = "https://iclass.buaa.edu.cn:8346/?type=jumpMyCenter"
 SIGNIN_LOGIN_REDIRECT_LIMIT = 8
 
-def get_network_urls(use_vpn):
-    if use_vpn:
+
+def get_network_urls(use_vpn: bool = False):
+    """Return campus-direct URLs by default; VPN is opt-in for legacy recovery."""
+    if use_vpn and os.environ.get("MUZTOOLS_USE_WEBVPN", "").lower() in {"1", "true", "yes"}:
         base_8347 = f"https://d.buaa.edu.cn/https-8347/{VPN_SERVICE_ID}"
         base_8346 = f"https://d.buaa.edu.cn/https-8346/{VPN_SERVICE_ID}"
-        base_8081 = f"https://d.buaa.edu.cn/http-8081/{VPN_SERVICE_ID}" 
+        base_8081 = f"https://d.buaa.edu.cn/http-8081/{VPN_SERVICE_ID}"
         return {
             "my_center": f"{base_8346}/?type=jumpMyCenter",
             "login": f"{base_8347}/app/user/login.action",
             "schedule": f"{base_8347}/app/course/get_stu_course_sched.action",
             "timestamp": f"{base_8081}/app/common/get_timestamp.action",
-            "sign": f"{base_8081}/app/course/stu_scan_sign.action"
+            "sign": f"{base_8081}/app/course/stu_scan_sign.action",
+            "sso": "https://d.buaa.edu.cn/login",
         }
-    else:
-        return {
-            "my_center": SIGNIN_MY_CENTER_URL,
-            "login": "https://iclass.buaa.edu.cn:8347/app/user/login.action",
-            "schedule": "https://iclass.buaa.edu.cn:8347/app/course/get_stu_course_sched.action",
-            "timestamp": "http://iclass.buaa.edu.cn:8081/app/common/get_timestamp.action",
-            "sign": "http://iclass.buaa.edu.cn:8081/app/course/stu_scan_sign.action"
-        }
+    return {
+        "my_center": SIGNIN_MY_CENTER_URL,
+        "login": "https://iclass.buaa.edu.cn:8347/app/user/login.action",
+        "schedule": "https://iclass.buaa.edu.cn:8347/app/course/get_stu_course_sched.action",
+        "timestamp": "http://iclass.buaa.edu.cn:8081/app/common/get_timestamp.action",
+        "sign": "http://iclass.buaa.edu.cn:8081/app/course/stu_scan_sign.action",
+        "sso": "https://sso.buaa.edu.cn/login",
+    }
 
 def _locked_read(file_path: Path):
     if not file_path.exists():
@@ -75,8 +79,8 @@ async def save_user_data(qq_id, data):
     file_path = USER_DIR / f"{qq_id}.json"
     await asyncio.to_thread(_locked_write, file_path, data)
 
-async def sso_login(client: httpx.AsyncClient, username, password):
-    vpn_entry_url = "https://d.buaa.edu.cn/login"
+async def sso_login(client: httpx.AsyncClient, username, password, *, use_vpn: bool = False):
+    vpn_entry_url = get_network_urls(use_vpn)["sso"]
     try:
         res = await client.get(vpn_entry_url, timeout=10)
         res.raise_for_status()
@@ -102,9 +106,10 @@ async def sso_login(client: httpx.AsyncClient, username, password):
     final_url = str(login_res.url)
     if login_res.status_code == 401 or "密码错误" in login_res.text:
         raise ValueError("SSO 认证失败：学号或密码错误。")
-    
-    vpn_cookies = [c.name for k, c in client.cookies.jar._cookies.items() for _, c in c.items() for _, c in c.items()]
-    if "d.buaa.edu.cn" in final_url or any("wengine" in name.lower() for name in vpn_cookies):
+
+    final_host = urlparse(final_url).hostname or ""
+    sso_cookies = [c.name for k, c in client.cookies.jar._cookies.items() for _, c in c.items() for _, c in c.items()]
+    if final_host in {"sso.buaa.edu.cn", "iclass.buaa.edu.cn", "app.buaa.edu.cn", "d.buaa.edu.cn"} or sso_cookies:
         return True
     
     raise ValueError(f"SSO 穿透失败，最终停留地址: {final_url}")
@@ -192,13 +197,15 @@ async def resolve_signin_login_name(client: httpx.AsyncClient, use_vpn: bool):
     raise ValueError("无法从 iClass MyCenter 跳转链解析 loginName。")
 
 async def perform_duaa_login(target_student_id, personal_password=None):
-    use_vpn = bool(personal_password)
+    # The service now runs inside the campus network, so authentication and
+    # subsequent iClass requests use the direct campus route by default.
+    use_vpn = False
     urls = get_network_urls(use_vpn)
     
     async with httpx.AsyncClient(verify=False, follow_redirects=True, headers={"User-Agent": UA}) as client:
-        if use_vpn:
-            await sso_login(client, target_student_id, personal_password)
-            app_login_name = await resolve_signin_login_name(client, use_vpn=True)
+        if personal_password:
+            await sso_login(client, target_student_id, personal_password, use_vpn=False)
+            app_login_name = await resolve_signin_login_name(client, use_vpn=False)
         else:
             app_login_name = target_student_id
             
@@ -247,7 +254,7 @@ async def execute_sign_in(use_vpn, cookies, uid, course_sched_id, session_id=Non
         return res.json()
 
 async def safe_fetch_schedule(acc, today_str):
-    has_vpn = bool(acc.get('password'))
+    has_vpn = False
     uid, sess, cookies = acc.get('uid'), acc.get('session_id'), acc.get('cookies')
     urls = get_network_urls(has_vpn)
     auth_updated = False
@@ -281,7 +288,7 @@ def _is_auth_error_message(message: str):
     return any(token in text for token in ("登录", "session", "账号", "用户"))
 
 async def safe_execute_sign_in(acc, course_id, force_refresh=False):
-    has_vpn = bool(acc.get('password'))
+    has_vpn = False
     uid, sess, cookies = acc.get('uid'), acc.get('session_id'), acc.get('cookies')
     auth_updated = False
 

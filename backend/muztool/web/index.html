@@ -698,8 +698,7 @@
     douyinFriendQuery: "",
     tiboHistory: null,
     liveSocket: null,
-    liveReconnectTimer: null,
-    tdBridgeWaiters: new Map()
+    liveReconnectTimer: null
   };
 
   // DOM 辅助
@@ -1140,7 +1139,7 @@
       <div class="hero">
         <p class="muted" style="color: rgba(255,255,255,0.85); font-size: 12px; font-weight: 600;">TODAY OVERVIEW</p>
         <h2 style="margin: 4px 0 2px; color: #fff;">校园工具一站通</h2>
-        <p class="muted" style="color: rgba(255,255,255,0.8);">自动签到、锻炼打卡与火花自动化</p>
+        <p class="muted" style="color: rgba(255,255,255,0.8);">自动签到、TD 打卡与火花自动化</p>
         <div class="hero-stat-grid">
           <div class="hero-stat" data-nav="td" style="cursor:pointer;">
             <div class="label">TD 课外锻炼</div>
@@ -1218,7 +1217,7 @@
       {
         id: "td",
         title: "TD / 阳光体育",
-        desc: "锻炼次数查询，支持 Android 或电脑 WebUI 在校园网本机发起 TD",
+        desc: "锻炼次数查询，支持在校园网环境中直接发起 TD 打卡",
         tag: "体育",
         color: "#0288d1",
         icon: "🏃",
@@ -1266,7 +1265,7 @@
             <div style="font-size: 20px;">💡</div>
             <div style="flex: 1;">
               <b>提示：尚未绑定统一认证学号</b>
-              <p class="muted-sm">自动签到和 TD 需要先绑定学号；抖音续火花与 Tibo 监测可直接使用。</p>
+              <p class="muted-sm">自动签到需要先绑定学号；TD 打卡会在校园网环境中直接发起。</p>
             </div>
             <button type="button" class="btn soft sm" data-action="open-bind-dialog">去绑定</button>
           </div>
@@ -1416,8 +1415,6 @@
   }
 
   // 4. TD / 阳光体育页面
-  const TD_BRIDGE_BASE = "http://127.0.0.1:18788";
-  const TD_BRIDGE_TOKEN_KEY = "muz_td_bridge_token";
   const TD_MACHINES = {
     xueyuanlu: {
       entrance: [[2, "北航本部TD入口1"], [4, "北航本部TD入口2"], [3, "北航本部TD入口3"]],
@@ -1442,87 +1439,6 @@
     if (exit) exit.innerHTML = tdMachineOptions(campus, "exit");
   }
 
-  function fileToDataUrl(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error(`无法读取照片：${file?.name || "未知文件"}`));
-      reader.readAsDataURL(file);
-    });
-  }
-
-  function tdBridgeToken() {
-    const token = String($("td-bridge-token")?.value || "").trim();
-    if (!token) throw new Error("请填写本地桥接窗口中显示的桥接码");
-    sessionStorage.setItem(TD_BRIDGE_TOKEN_KEY, token);
-    return token;
-  }
-
-  async function requestTdBridgeDirect(path, method, payload, token) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), method === "GET" ? 8000 : 65000);
-    try {
-      const response = await fetch(TD_BRIDGE_BASE + path, {
-        method,
-        mode: "cors",
-        cache: "no-store",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-          "X-MuzTool-Bridge-Token": token
-        },
-        body: method === "GET" ? undefined : JSON.stringify(payload || {}),
-        signal: controller.signal
-      });
-      const text = await response.text();
-      let data = {};
-      try { data = text ? JSON.parse(text) : {}; }
-      catch { throw new Error("本地桥接返回了无法识别的数据"); }
-      if (!response.ok) {
-        const error = new Error(data.message || `本地桥接请求失败 (${response.status})`);
-        error.tdBridgeResponse = true;
-        throw error;
-      }
-      return data;
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
-  function requestTdBridgeViaTampermonkey(path, method, payload, token) {
-    return new Promise((resolve, reject) => {
-      const requestId = `td-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const timer = setTimeout(() => {
-        state.tdBridgeWaiters.delete(requestId);
-        reject(new Error("无法连接本地桥接。请先运行桥接脚本；若浏览器拦截 localhost，再安装篡改猴助手"));
-      }, method === "GET" ? 10000 : 70000);
-      state.tdBridgeWaiters.set(requestId, { resolve, reject, timer });
-      window.postMessage({
-        source: "muztool-web",
-        type: "td-request",
-        requestId,
-        path,
-        method,
-        token,
-        payload: payload || {}
-      }, "*");
-    });
-  }
-
-  async function requestTdBridge(path, { method = "GET", payload = null, token } = {}) {
-    try {
-      return await requestTdBridgeDirect(path, method, payload, token);
-    } catch (directError) {
-      if (directError?.tdBridgeResponse) throw directError;
-      try {
-        return await requestTdBridgeViaTampermonkey(path, method, payload, token);
-      } catch (helperError) {
-        const directMessage = directError?.name === "AbortError" ? "直接连接本地桥接超时" : String(directError?.message || "直接连接失败");
-        throw new Error(`${helperError.message}（${directMessage}）`);
-      }
-    }
-  }
-
   async function renderTdView() {
     let tdData = {}, sunData = {};
     try {
@@ -1537,7 +1453,6 @@
     }
 
     const studentId = state.student?.student_id || "";
-    const savedBridgeToken = sessionStorage.getItem(TD_BRIDGE_TOKEN_KEY) || "";
 
     return `
       ${renderPageBackHeader("TD / 阳光体育")}
@@ -1559,7 +1474,7 @@
       <!-- 选择打卡机照片 -->
       <div class="card">
         <h3>打卡机照片</h3>
-        <p class="muted-sm" style="margin-bottom: 14px; line-height: 1.5;">电脑本机打卡必须同时选择入口与出口照片。点击“上传并保存”才会另行存档到 MuzTool；直接打卡时照片只发送给本机桥接和校内 TD 服务器。</p>
+        <p class="muted-sm" style="margin-bottom: 14px; line-height: 1.5;">请选择入口和出口照片。保存后，可由服务完成 TD 打卡。</p>
 
         <div class="input-group">
           <label for="td-in">入口打卡机照片</label>
@@ -1572,16 +1487,16 @@
         </div>
 
         <button type="button" class="btn ghost wide" id="btn-upload-photos" data-action="upload-td-photos" style="margin-top: 8px;">
-          仅上传并保存照片
+          保存照片
         </button>
       </div>
 
-      <!-- 电脑本机 TD -->
+      <!-- TD 打卡 -->
       <div class="card" style="border: 1px solid rgba(2, 136, 209, .24);">
         <div class="row-between" style="align-items: flex-start; margin-bottom: 12px;">
           <div>
-            <h3>电脑本机发起 TD</h3>
-            <p class="muted-sm" style="margin-top: 4px; line-height: 1.5;">电脑需连接校园网，并保持本地桥接窗口运行。学号：${studentId ? esc(studentId) : "尚未绑定"}</p>
+            <h3>发起 TD 打卡</h3>
+            <p class="muted-sm" style="margin-top: 4px; line-height: 1.5;">服务将在校园网环境中发起申请。学号：${studentId ? esc(studentId) : "尚未绑定"}</p>
           </div>
           ${renderBadge(studentId ? "available" : "unbound")}
         </div>
@@ -1611,18 +1526,8 @@
           </div>
         </div>
 
-        <div class="input-group">
-          <label for="td-bridge-token">本地桥接码（仅保存在当前浏览器标签会话）</label>
-          <input type="password" id="td-bridge-token" value="${esc(savedBridgeToken)}" autocomplete="off" placeholder="从桥接脚本窗口复制" />
-        </div>
-
-        <div class="grid" style="margin-bottom: 10px;">
-          <button type="button" class="btn ghost" data-action="download-td-bridge">下载本地桥接</button>
-          <button type="button" class="btn ghost" data-action="install-td-helper">安装篡改猴助手（可选）</button>
-        </div>
-        <button type="button" class="btn soft wide" data-action="test-td-bridge" style="margin-bottom: 10px;">测试本地桥接</button>
-        <button type="button" class="btn wide" data-action="run-td-desktop" ${studentId ? "" : "disabled"}>
-          🖥️ 电脑本机发起 TD
+        <button type="button" class="btn wide" data-action="run-td" ${studentId ? "" : "disabled"}>
+          🏃 发起 TD 打卡
         </button>
         ${!studentId ? `<p class="muted-sm" style="margin-top: 10px; color: var(--err);">请先绑定统一认证学号。</p>` : ""}
       </div>
@@ -1630,17 +1535,14 @@
       <!-- 打卡说明卡片 -->
       <div class="card" style="background: var(--card-alt);">
         <div class="row">
-          <div style="font-size: 24px;">💻</div>
+          <div style="font-size: 24px;">ℹ️</div>
           <div style="flex: 1;">
-            <b>为什么电脑需要本地桥接？</b>
+            <b>TD 打卡说明</b>
             <p class="muted-sm" style="margin-top: 4px; line-height: 1.5;">
-              浏览器不能直接连接 TD 的原始 TCP 端口。本地桥接只监听 127.0.0.1，并代替网页从当前电脑连接校内打卡机；篡改猴助手仅用于处理部分浏览器的 localhost 访问限制。
+              请先绑定统一认证并准备入口、出口照片。手机和电脑均可使用本页面发起打卡，具体结果以 TD 服务返回为准。
             </p>
           </div>
         </div>
-        <button type="button" class="btn ghost wide" data-action="show-td-guide" style="margin-top: 12px;">
-          查看电脑与手机打卡说明
-        </button>
       </div>
     `;
   }
@@ -1907,7 +1809,7 @@
           <label for="spark-hour">每日自动发送基础时间（整点，0~23）</label>
           <input type="number" id="spark-hour" min="0" max="23" value="${esc(dy.hour ?? 9)}" />
           <p class="muted-sm" style="margin-top:6px;line-height:1.5;">
-            实际执行会在基础整点前后 5 分钟内每天随机一次并固定到当天。
+            实际执行会在基础整点前后 5 分钟内每天随机一次并固定到当天；列表中的好友按顺序发送，每位好友间隔 10 秒。
             ${dy.auto_scheduled_at ? `<br>今日计划：${esc(String(dy.auto_scheduled_at).replace("T", " ").split("+")[0].slice(0, 16))}（相对整点${Number(dy.auto_schedule_offset_minutes || 0) >= 0 ? "+" : ""}${Number(dy.auto_schedule_offset_minutes || 0)} 分钟）` : "今日随机时间将在调度器刷新后显示。"}
           </p>
         </div>
@@ -2385,83 +2287,59 @@
           method: "POST",
           body: fd
         });
-        toast(res.message || "打卡照片已成功上传");
+        state.tdStatus = { ...(state.tdStatus || {}), has_entrance_photo: Boolean(inPhoto) || Boolean(state.tdStatus?.has_entrance_photo), has_exit_photo: Boolean(outPhoto) || Boolean(state.tdStatus?.has_exit_photo) };
+        toast(res.message || "打卡照片已成功保存");
       });
       return;
     }
 
-    // 下载电脑端 TD 本地桥接
-    if (action === "download-td-bridge") {
-      window.open("/downloads/td-web-bridge.py", "_blank", "noopener");
-      toast("桥接脚本已开始下载");
-      return;
-    }
-
-    // 安装可选的篡改猴 localhost 兼容助手
-    if (action === "install-td-helper") {
-      window.open("/downloads/td-tampermonkey.user.js", "_blank", "noopener");
-      toast("正在打开篡改猴助手安装页");
-      return;
-    }
-
-    // 测试电脑端 TD 本地桥接
-    if (action === "test-td-bridge") {
-      await withButtonLoading(actionBtn, async () => {
-        const token = tdBridgeToken();
-        const result = await requestTdBridge("/health", { method: "GET", token });
-        if (!result.success) throw new Error(result.message || "本地桥接测试失败");
-        toast(result.message || "电脑端 TD 桥接已连接");
-      });
-      return;
-    }
-
-    // 电脑 WebUI 发起本机 TD
-    if (action === "run-td-desktop") {
+    // 直接发起 TD 打卡
+    if (action === "run-td") {
       await withButtonLoading(actionBtn, async () => {
         const studentId = String(state.student?.student_id || "").trim();
-            if (!studentId) throw new Error("请先绑定统一认证学号");
-
+        if (!studentId) throw new Error("请先绑定统一认证学号");
 
         const entranceFile = $("td-in")?.files?.[0];
         const exitFile = $("td-out")?.files?.[0];
-        if (!entranceFile || !exitFile) throw new Error("请同时选择入口与出口打卡机照片");
+        const saved = state.tdStatus || {};
+        if ((!entranceFile || !exitFile) && !(saved.has_entrance_photo && saved.has_exit_photo)) {
+          throw new Error("请同时选择入口和出口照片，或先保存已有照片");
+        }
+        if (entranceFile || exitFile) {
+          if (!entranceFile || !exitFile) throw new Error("请同时选择入口和出口照片");
+          const fd = new FormData();
+          fd.append("entrance", entranceFile);
+          fd.append("exit", exitFile);
+          await api("/api/td/photos", { method: "POST", body: fd });
+        }
+
         const gapMinutes = Number($("td-gap-minutes")?.value || 4);
         if (!Number.isInteger(gapMinutes) || gapMinutes < 1 || gapMinutes > 15) throw new Error("时间差需为 1～15 分钟的整数");
-
-        const token = tdBridgeToken();
-        const [entrancePhoto, exitPhoto] = await Promise.all([
-          fileToDataUrl(entranceFile),
-          fileToDataUrl(exitFile)
-        ]);
-        const payload = {
-          student_id: studentId,
-          campus: $("td-campus")?.value || "xueyuanlu",
-          entrance_machine_id: Number($("td-entrance-machine")?.value),
-          exit_machine_id: Number($("td-exit-machine")?.value),
-          gap_seconds: gapMinutes * 60,
-          entrance_photo: entrancePhoto,
-          exit_photo: exitPhoto
-        };
-        const result = await requestTdBridge("/td/manual", { method: "POST", payload, token });
-        if (!result.success) throw new Error(result.message || "电脑端 TD 未成功完成");
-        toast(result.message || "电脑端 TD 打卡完成");
+        const result = await api("/api/td/manual", {
+          method: "POST",
+          body: {
+            campus: $("td-campus")?.value || "xueyuanlu",
+            entrance_machine_id: Number($("td-entrance-machine")?.value),
+            exit_machine_id: Number($("td-exit-machine")?.value),
+            gap_seconds: gapMinutes * 60
+          }
+        });
+        if (!result.success) throw new Error(result.message || "TD 打卡未成功完成");
+        toast(result.message || "TD 打卡完成");
         await renderPage();
       });
       return;
     }
 
-    // TD 电脑/手机打卡提示说明
+    // TD 说明
     if (action === "show-td-guide") {
       showModal(`
-        <h3 style="margin-bottom: 10px;">TD 本机打卡指南</h3>
+        <h3 style="margin-bottom: 10px;">TD 打卡说明</h3>
         <p class="muted-sm" style="line-height: 1.7; margin-bottom: 14px;">
-          <b>电脑 WebUI：</b><br/>
-          1. 电脑连接校园网，下载并运行本地桥接脚本；<br/>
-          2. 将窗口中显示的桥接码填入网页，先点击“测试本地桥接”；<br/>
-          3. 选择入口图、出口图、校区和机位，再点击“电脑本机发起 TD”；<br/>
-          4. 若浏览器阻止网页访问 127.0.0.1，请安装篡改猴及页面提供的辅助脚本，然后重试。篡改猴不能替代本地桥接。<br/><br/>
-          <b>Android App：</b><br/>
-          手机连接校园网后进入 TD 页面，选择照片并点击“本机发起手动 TD”，无需电脑桥接。
+          1. 先绑定统一认证学号；<br/>
+          2. 选择入口和出口照片并保存；<br/>
+          3. 选择校区、机位和时间差后发起 TD 打卡；<br/>
+          4. 手机和电脑均可使用本页面，结果以 TD 服务返回为准。
         </p>
         <button type="button" class="btn wide" data-action="close-modal">我知道了</button>
       `);
@@ -2635,19 +2513,6 @@
     state.sparkTargets[index].mode = mode;
     if (mode === "standard") state.sparkTargets[index].message = "";
     refreshSparkFriendEditors();
-  });
-
-  // 接收篡改猴助手返回的本地 TD 桥接结果
-  window.addEventListener("message", (event) => {
-    const data = event.data || {};
-    if (event.source !== window || data.source !== "muztool-tampermonkey" || data.type !== "td-response") return;
-    const waiter = state.tdBridgeWaiters.get(data.requestId);
-    if (!waiter) return;
-    clearTimeout(waiter.timer);
-    state.tdBridgeWaiters.delete(data.requestId);
-    const payload = data.payload || {};
-    if (payload.success) waiter.resolve(payload);
-    else waiter.reject(new Error(payload.message || "本地桥接请求失败"));
   });
 
   // 监听 Hash 变化

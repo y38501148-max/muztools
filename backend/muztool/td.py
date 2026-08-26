@@ -9,13 +9,14 @@ from typing import Any
 
 import httpx
 
+from . import config
 from .signin_core import UA, TZ_BEIJING, sso_login
-from .vpn import to_vpn_url
 
-TD_INDEX_URL = "http://10.212.28.38/index.php?schoolno=10006"
-TD_SCORE_URL = "http://10.212.28.38/main.php?module=stu&title=stu_sun_score"
-TD_SERVER_IP = "10.212.28.38"
+TD_SERVER_HOST = config.TD_SERVER_HOST
+TD_INDEX_URL = f"http://{TD_SERVER_HOST}/index.php?schoolno=10006"
+TD_SCORE_URL = f"http://{TD_SERVER_HOST}/main.php?module=stu&title=stu_sun_score"
 TD_SERVER_PORT = 8888
+TD_SERVER_IP = TD_SERVER_HOST
 COUNT_RE = re.compile(r"本学期锻炼次数\s*[:：]\s*(\d+)")
 SCORE_RE = re.compile(
     r"<td>\s*(\d{4})\s*-\s*(\d{4})\s*</td>\s*<td>\s*(\d+)\s*</td>\s*<td>\s*(\d+)\s*</td>\s*<td>\s*-\s*</td>",
@@ -151,10 +152,10 @@ def _check_and_upload(student_id: str, machine_id: int, photo: bytes, timestamp_
 
 async def query_td_counts(student_id: str, password: str) -> list[dict[str, Any]]:
     async with httpx.AsyncClient(verify=False, follow_redirects=True, headers={"User-Agent": UA}, timeout=20) as client:
-        await sso_login(client, student_id, password)
-        index = await client.get(to_vpn_url(TD_INDEX_URL))
+        await sso_login(client, student_id, password, use_vpn=False)
+        index = await client.get(TD_INDEX_URL)
         index.raise_for_status()
-        page = await client.get(to_vpn_url(TD_SCORE_URL))
+        page = await client.get(TD_SCORE_URL)
         page.raise_for_status()
     rows = [
         {

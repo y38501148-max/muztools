@@ -168,7 +168,7 @@ fun TdScreen(
                 }
             }
 
-            // 校区与伪装设置
+            // 校区与打卡参数
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 SectionHeader(title = "打卡参数配置")
@@ -213,11 +213,11 @@ fun TdScreen(
                         ) {
                             Column {
                                 Text(
-                                    text = "伪装时间差",
+                                    text = "入口至出口时间差",
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                                 )
                                 Text(
-                                    text = "入校到出校之间模拟时长 (推荐 4-8 分钟)",
+                                    text = "入口到出口之间的时间间隔",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -272,7 +272,7 @@ fun TdScreen(
             item {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "Android 可在校园网直接发起；电脑 WebUI 也已支持通过本地桥接发起。照片不会保存到 MuzTool 服务器，默认时间差 4 分钟。",
+                    text = "手机和电脑均可在校园网环境中直接发起，照片用于 TD 打卡。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
@@ -297,7 +297,7 @@ fun TdScreen(
                                 color = MaterialTheme.colorScheme.onPrimary
                             )
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text("正在模拟打卡流程...")
+                            Text("正在发起 TD 打卡...")
                         } else {
                             Icon(imageVector = Icons.Default.DirectionsRun, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))

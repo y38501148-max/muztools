@@ -4,10 +4,12 @@ MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的�
 
 ## v1.4.0 主要能力
 
-- **服务器迁移**：生产环境迁移至树莓派（server3，校园网 BUAA-Mobile 直连），正式启用域名 `https://muzermat.online`（教育网 IPv6 + Let's Encrypt HTTPS）；客户端旧服务器地址自动迁移。
+- **服务器迁移**：生产服务运行在校园网环境，公网入口由 HTTPS 反向代理提供；客户端会自动迁移到当前服务入口。
 
 - **邀请码注册**：新账号必须填写一次性邀请码；无邀请码、邀请码无效或已使用时均无法注册。既有账号无需重新注册，默认保留全部功能权限。
+- **TD 与阳光体育**：查询锻炼进度；在校园网环境中，WebUI 与 Android 均可直接发起 TD 打卡申请。
 - **邀请码管理**：服务端可批量生成并加密保存邀请码；仅 `muzermat` 账号可在功能区随机领取一个尚未使用的邀请码。
+- **TD 打卡**：入口和出口照片由用户主动选择并保存后使用；服务端在校园网环境中发起申请，用户无需额外配置。
 - **抖音续火花**：通过加密 Cookie 绑定抖音账号，缓存聊天好友与群聊列表，支持搜索、标准消息、自定义消息、单个会话测试发送、全部手动执行和定时执行；每日任务会在基础整点前后 5 分钟内选择一次随机时间。安全整改期间暂时只对 `muzermat` 开放。
 - **Tibo Reset 监测**：服务端启动时立即检查，之后每小时检查过去 24 小时的相关推特，缓存最多 100 条匹配历史；用户可独立开启或关闭系统推送。
 - **多端通知与热更新**：WebUI 与 Android 共用服务端状态；Android 后台通知使用前台服务、WebSocket、15 秒遗漏补拉、网络恢复重连、唤醒锁、任务移除重启和 WorkManager 看门狗。首次登录后会请求通知权限和忽略电池优化授权。客户端保留 FCM 接入代码作为可选通道，但只有设备注册和真实设备验证成功后才能视为可用。应用可通过服务端版本元数据下载安装新版本。
@@ -17,6 +19,7 @@ MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的�
 - 应用账号密码通过 PBKDF2-HMAC-SHA256 加盐哈希保存，服务端不保存可还原的应用密码。
 - 登录、注册和统一身份认证绑定使用服务端 RSA 公钥进行应用层加密，后端拒绝旧版明文凭据请求。
 - 统一身份认证密码使用 AES-256-GCM 加密保存，密钥与用户数据分离；旧明文数据在读取时自动迁移并删除明文字段。
+- 登录成功后客户端使用随机会话 Bearer Token 访问 API，不保存应用明文密码；Android 将令牌放在系统加密存储中，WebUI 优先使用 HttpOnly 会话 Cookie。
 - Android 网络日志不记录请求正文；WebUI 不保存登录密码。
 - 邀请码正文不会明文写入邀请码库存文件，邀请码仅在管理员领取时显示一次。
 - 抖音 Cookie 使用 RSA 包装随机 AES-256-GCM 密钥的混合信封提交，并以 AES-256-GCM 密文保存；好友缓存同样加密保存。
@@ -48,7 +51,7 @@ MUZTOOLS_DATA=./data MUZTOOLS_PORT=18787 python -m muztool.main
 
 健康检查：`GET /api/health`
 
-WebUI：后端启动后访问 `http://服务器地址:18787/`。生产入口为 `https://muzermat.online`（树莓派 server3，Caddy 反代 443 → 127.0.0.1:18787）。旧 NAT 入口 `http://150.138.79.9:10023`（server2）仅作为旧客户端热更新中继保留，待存量设备全部升级后可下线。
+WebUI：后端启动后访问 `http://服务器地址:18787/`。生产入口由反向代理提供 HTTPS；旧版客户端更新中继仅提供版本元数据和安装包下载，不运行签到、TD、通知或自动任务。
 
 ## 邀请码管理
 
@@ -67,8 +70,8 @@ muz-admin invite-stats
 服务端管理员可通过用户 ID、用户名或学号向单个用户发送系统提示：
 
 ```bash
-MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin message <用户标识> <提示正文>
-MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin message <用户标识> 多个 单词 会自动连接 --title "自定义标题"
+MUZTOOLS_DATA=<production-data-dir> .venv/bin/muz-admin message <用户标识> <提示正文>
+MUZTOOLS_DATA=<production-data-dir> .venv/bin/muz-admin message <用户标识> 多个 单词 会自动连接 --title "自定义标题"
 ```
 
 命令不会在输出中回显正文。消息会写入用户通知列表，并通过 FCM、跨进程实时事件队列和 Android 后台补拉通道发送。

@@ -9,19 +9,19 @@ MuzTool v1.3.3 已接入 Firebase Cloud Messaging（FCM）客户端和服务端�
 需要在 Firebase 控制台创建 Android 应用，包名必须为 `com.muzermat.muztools`，然后下载：
 
 1. Android 客户端配置：放到 `android/app/google-services.json`；
-2. 服务端凭据：下载 Firebase Admin SDK service-account JSON，放到生产数据目录，例如 `/root/muz-tool/data/firebase-service-account.json`。
+2. 服务端凭据：下载 Firebase Admin SDK service-account JSON，放到生产数据目录，例如 `<production-data-dir>/firebase-service-account.json`。
 
 这两个文件都包含敏感配置，不能提交到 Git、不能放到 APK 之外的公开下载目录，也不能在聊天中粘贴。仓库只保留 `google-services.json.example` 说明模板。
 
 ## 服务端配置
 
-在 `/root/muz-tool/data/muztool.env` 写入：
+在 `<production-data-dir>/muztool.env` 写入：
 
 ```text
-MUZTOOLS_FCM_CREDENTIALS=/root/muz-tool/data/firebase-service-account.json
+MUZTOOLS_FCM_CREDENTIALS=<production-data-dir>/firebase-service-account.json
 MUZTOOLS_FCM_PROJECT_ID=你的 Firebase project ID
 # 中国大陆服务器无法直连 Google 时可单独为 FCM 指定代理
-MUZTOOLS_FCM_PROXY=http://127.0.0.1:7890
+MUZTOOLS_FCM_PROXY=<proxy-url>
 ```
 
 随后重启服务：

@@ -40,12 +40,10 @@ muz-tool/
 
 ## 生产环境
 
-- 主力：树莓派 server3（校园网 BUAA-Mobile，SSH 经 server2 反向隧道 `ssh server3`）
-- 项目：`/home/pi/muz-tool/backend`
-- 数据：`/home/pi/muz-tool/data`
-- 服务：`muz-tool.service`（127.0.0.1:18787）、`caddy`（443 反代，acme.sh DNS-01 证书）、`mihomo`（127.0.0.1:7890 出口代理）
-- 生产入口：`https://muzermat.online`（仅 AAAA 教育网 IPv6）
-- 旧入口：`http://150.138.79.9:10023`（server2，仅作为旧客户端热更新中继，勿删 data）
+- 生产主机位于校园网环境，服务端可直接访问校园内部业务；
+- 项目和数据目录由部署环境注入，不写入仓库；
+- 服务：`muz-tool.service`（仅本机监听）、反向代理和可选出口代理；
+- 旧客户端更新中继仅保留版本元数据和安装包下载，设置 `MUZTOOLS_RELAY_ONLY=1`，不得运行其他功能。
 
 部署时禁止删除或覆盖任何一台服务器的生产 `data/`。同步代码必须排除 `data/`、`.venv`、缓存和测试产物。
 发布热更新时必须两台同时执行，且带上 `MUZTOOLS_DATA` 环境变量，否则会写错数据目录（此坑已踩过）。
@@ -58,7 +56,7 @@ muz-tool/
 - 新账号必须通过一次性邀请码注册，无邀请码、无效邀请码或已用邀请码均不得创建账号。
 - `store.ensure_approvals()` 仅保留旧客户端兼容投影，固定返回 `signin/td/spark = approved`；不得再恢复审批申请、审批按钮或审批 CLI。
 - 邀请码由 `muz-admin generate-invites --count N` 批量生成。
-- 邀请码库存保存在 `/root/muz-tool/data/invite_codes.json`，正文使用 AES-GCM 密文保存，同时保存不可逆 SHA-256 哈希。
+- 邀请码库存保存在生产数据目录的 `invite_codes.json`，正文使用 AES-GCM 密文保存，同时保存不可逆 SHA-256 哈希。
 - 只有用户名严格等于 `muzermat` 的账号可调用邀请码库存和领取接口；非管理员访问返回 404，避免暴露管理入口。
 - `POST /api/invites/issue` 随机领取一个 `available` 邀请码并标记为 `issued`；注册消费后标记为 `used`。
 - 邀请码不得出现在日志、测试输出、截图、Git 或普通 API 列表中。
@@ -79,14 +77,14 @@ muz-tool/
 - 公钥由 `GET /api/security/public-key` 获取。
 - WebUI 使用原生 BigInt 实现 RSA PKCS#1 v1.5；Android 使用 `RSA/ECB/PKCS1Padding`。
 - 后端必须拒绝旧版明文字段，不能为兼容旧客户端而静默接受明文密码。
-- RSA 私钥位于 `/root/muz-tool/data/transport_rsa.pem`，权限必须为 `0600`。
+- RSA 私钥位于生产数据目录的 `transport_rsa.pem`，权限必须为 `0600`。
 - 生产入口仍为 HTTP，因此应用层 RSA 只保护凭据不以明文出现在请求中，不能替代 HTTPS 对会话令牌和服务器身份的保护；文档与发布说明不得宣称整体端到端安全。
 
 ### 凭据静态存储
 
 - 应用账号密码只保存 PBKDF2-HMAC-SHA256 加盐哈希。
 - 统一身份认证密码保存为 `student.password_encrypted`，使用 AES-256-GCM。
-- AES 密钥位于 `/root/muz-tool/data/vault.key`，权限必须为 `0600`。
+- AES 密钥位于生产数据目录的 `vault.key`，权限必须为 `0600`。
 - `load_user()` / `iter_users()` 会把旧 `student.password` 自动迁移为密文并删除明文字段。
 - 业务调用统一认证时必须使用 `get_student_password()` 或 `student_runtime()` 获取临时运行时副本，不得把解密密码写回用户对象。
 - WebUI 不保存账号密码；Android 如需记住密码，只能使用系统加密存储。网络日志不得记录请求正文。
@@ -191,37 +189,37 @@ rsync -az \
   --exclude 'data' \
   --exclude '__pycache__' \
   --exclude '.pytest_cache' \
-  backend/ server2:/root/muz-tool/backend/
+  backend/ <production-host>:<project-dir>/backend/
 
-ssh server2 'bash -s' <<'REMOTE'
+ssh <production-host> 'bash -s' <<'REMOTE'
 set -euo pipefail
-cd /root/muz-tool/backend
+cd <project-dir>/backend
 .venv/bin/pip install -e .
 .venv/bin/python -m compileall -q muztool
 systemctl restart muz-tool.service
 sleep 2
 systemctl is-active muz-tool.service
-curl -fsS http://127.0.0.1:18787/api/health
+curl -fsS http://127.0.0.1:<port>/api/health
 REMOTE
 ```
 
 部署 v1.3.0 后生成邀请码库存：
 
 ```bash
-ssh server2 'cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin generate-invites --count 50'
+ssh <production-host> 'cd <project-dir>/backend && MUZTOOLS_DATA=<production-data-dir> .venv/bin/muz-admin generate-invites --count 50'
 ```
 
 ## Android 热更新
 
 ```bash
-cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-1.3.9.apk
-scp release/muztools-1.3.9.apk server2:/tmp/
-ssh server2 \
-  "cd /root/muz-tool/backend && MUZTOOLS_DATA=/root/muz-tool/data \
-   .venv/bin/muz-admin set-version 1.3.9 --code 26 \
-   --title 'MuzTool v1.3.9' \
-   --message '将最近通知和续火花好友名单改为固定高度可滚动列表' \
-   --apk /tmp/muztools-1.3.9.apk"
+cp android/app/build/outputs/apk/debug/app-debug.apk release/muztools-<version>.apk
+scp release/muztools-<version>.apk <production-host>:/tmp/
+ssh <production-host> \
+  "cd <project-dir>/backend && MUZTOOLS_DATA=<production-data-dir> \
+   .venv/bin/muz-admin set-version <version> --code <version-code> \
+   --title 'MuzTool <version>' \
+   --message '更新说明' \
+   --apk /tmp/muztools-<version>.apk"
 ```
 
 除非用户明确要求，不使用 `--force`，也不提高 `min_version_code`。

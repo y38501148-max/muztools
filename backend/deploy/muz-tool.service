@@ -4,12 +4,13 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/root/muz-tool/backend
-Environment=MUZTOOLS_DATA=/root/muz-tool/data
-Environment=MUZTOOLS_HOST=0.0.0.0
+WorkingDirectory=/srv/muz-tool/backend
+Environment=MUZTOOLS_DATA=/srv/muz-tool/data
+Environment=MUZTOOLS_RELAY_ONLY=0
+Environment=MUZTOOLS_HOST=127.0.0.1
 Environment=MUZTOOLS_PORT=18787
-EnvironmentFile=-/root/muz-tool/data/muztool.env
-ExecStart=/root/muz-tool/backend/.venv/bin/python -m muztool.main
+EnvironmentFile=-/srv/muz-tool/data/muztool.env
+ExecStart=/srv/muz-tool/backend/.venv/bin/python -m muztool.main
 Restart=always
 RestartSec=3
 

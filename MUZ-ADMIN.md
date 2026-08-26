@@ -3,8 +3,8 @@
 `muz-admin` 是 MuzTool 服务端管理工具。生产环境执行时必须使用与服务一致的数据目录：
 
 ```bash
-cd /root/muz-tool/backend
-MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin <command>
+cd <project-dir>/backend
+MUZTOOLS_DATA=<production-data-dir> .venv/bin/muz-admin <command>
 ```
 
 ## 用户查询
@@ -32,7 +32,7 @@ muz-admin invite-stats
 - 批量生成一次性邀请码库存；默认 20 个，单次 1～500 个。
 - 邀请码以哈希和 AES-GCM 密文保存在 `invite_codes.json`。
 - 命令仅输出生成数量和当前可用数量，不输出邀请码正文。
-- `muzermat` 账号从 WebUI 或 Android 功能区领取时，后端随机选择一个 `available` 邀请码并标记为 `issued`。
+- 管理员从 WebUI 或 Android 功能区领取时，后端随机选择一个 `available` 邀请码并标记为 `issued`。
 - 注册成功后邀请码标记为 `used`，不能再次使用。
 
 ### `invite-stats`
@@ -69,28 +69,18 @@ muz-admin set-version <version> --code <versionCode> [选项]
 - `--min-code <n>`：最低允许版本码；
 - `--force`：强制更新，仅在用户明确要求时使用。
 
-v1.3.9 示例：
-
-```bash
-MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin set-version 1.3.9 \
-  --code 26 \
-  --title 'MuzTool v1.3.9' \
-  --message '将最近通知和续火花好友名单改为固定高度可滚动列表' \
-  --apk /tmp/muztools-1.3.9.apk
-```
-
 ## 安全注意事项
 
-- 不要输出、复制或提交 `/root/muz-tool/data/vault.key`、`transport_rsa.pem`、`secret.key`。
-- 不要删除或覆盖生产 `data/`；部署代码时必须排除该目录。
+- 不要输出、复制或提交生产数据目录中的 `vault.key`、`transport_rsa.pem`、`secret.key`。
+- 不要删除或覆盖生产数据；部署代码时必须排除该目录。
 - 不要在日志、截图、工单、Git 提交或聊天中粘贴密码、Cookie、Token 或邀请码库存密文。
-- 手工运行命令时必须设置 `MUZTOOLS_DATA=/root/muz-tool/data`，否则会写入错误目录。
+- 手工运行命令时必须设置 `MUZTOOLS_DATA=<production-data-dir>`，否则可能写入错误目录。
 
 ## 定向发送系统提示
 
 ```bash
-MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin message <用户ID/用户名/学号> <提示正文>
-MUZTOOLS_DATA=/root/muz-tool/data .venv/bin/muz-admin message <用户标识> 第一段 第二段 --title "自定义标题"
+MUZTOOLS_DATA=<production-data-dir> .venv/bin/muz-admin message <用户ID/用户名/学号> <提示正文>
+MUZTOOLS_DATA=<production-data-dir> .venv/bin/muz-admin message <用户标识> 第一段 第二段 --title "自定义标题"
 ```
 
 - 多个正文参数会以空格连接；正文最多 500 个字符，标题最多 80 个字符。

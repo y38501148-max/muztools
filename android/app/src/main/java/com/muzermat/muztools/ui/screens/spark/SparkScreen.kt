@@ -171,7 +171,7 @@ fun SparkScreen(viewModel: SparkViewModel) {
                             Column(Modifier.weight(1f)) {
                                 Text("自动续火花", fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "到达设定时间后自动执行，服务短暂重启也会补执行",
+                                    "到达设定时间后自动执行，好友按列表顺序逐个发送，每位间隔 10 秒；服务短暂重启也会补执行",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

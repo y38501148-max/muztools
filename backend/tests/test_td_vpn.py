@@ -1,8 +1,15 @@
+from muztool.signin_core import get_network_urls
 from muztool.td import card_id_from_student, plan_timestamps
 from muztool.vpn import to_vpn_url
 
 
-def test_card_id():
+def test_signin_defaults_to_campus_direct_urls():
+    urls = get_network_urls()
+    assert urls["sso"] == "https://sso.buaa.edu.cn/login"
+    assert all("d.buaa.edu.cn" not in value for value in urls.values())
+
+
+
     assert card_id_from_student("22375080") == "1556AA8"
 
 

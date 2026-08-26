@@ -20,10 +20,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_DELIVERED_NOTIFICATIONS = "delivered_notifications"
         private const val KEY_BACKGROUND_POWER_PROMPT_SHOWN = "background_power_prompt_shown"
         private const val DEFAULT_SERVER_URL = "https://muzermat.online"
-        private val LEGACY_SERVER_URLS = setOf(
-            "http://150.138.79.9:10023",
-            "http://150.138.79.9:18787"
-        )
+        private val LEGACY_SERVER_URLS = emptySet<String>()
     }
 
     // Do not fall back to plaintext SharedPreferences: this store contains the

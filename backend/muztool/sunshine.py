@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import re
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 import httpx
 
 from .signin_core import UA, sso_login
-from .vpn import to_vpn_url
 
 API_BASE = "https://ygdk.buaa.edu.cn/api/Front"
 OAUTH_URL = (
@@ -19,12 +18,12 @@ CODE_RE = re.compile(r"[?&#]code=([^&#]+)")
 
 
 def _api(path: str) -> str:
-    return to_vpn_url(API_BASE + path)
+    return API_BASE + path
 
 
 async def _sso_client(student_id: str, password: str) -> httpx.AsyncClient:
     client = httpx.AsyncClient(verify=False, follow_redirects=True, headers={"User-Agent": UA}, timeout=25)
-    await sso_login(client, student_id, password)
+    await sso_login(client, student_id, password, use_vpn=False)
     return client
 
 
@@ -36,7 +35,7 @@ def _extract_code(text: str) -> str | None:
 
 
 async def _oauth_code(client: httpx.AsyncClient) -> str:
-    current = to_vpn_url(OAUTH_URL)
+    current = OAUTH_URL
     no_redirect = httpx.AsyncClient(
         verify=False,
         follow_redirects=False,
@@ -58,7 +57,7 @@ async def _oauth_code(client: httpx.AsyncClient) -> str:
                 parsed = urlparse(current)
                 current = f"{parsed.scheme}://{parsed.netloc}{location}"
             else:
-                current = location if location.startswith("http") else to_vpn_url(location)
+                current = location if location.startswith("http") else urljoin(current, location)
     finally:
         await no_redirect.aclose()
     raise ValueError("无法从阳光打卡 OAuth 跳转中获取 code")

@@ -74,6 +74,8 @@ if CORS_ORIGINS:
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    if config.RELAY_ONLY and request.url.path not in {"/api/health", "/api/app/version", "/api/app/apk"}:
+        return Response("Not Found", status_code=404, media_type="text/plain")
     content_length = request.headers.get("content-length")
     if request.url.path in {"/api/auth/login", "/api/auth/register", "/api/student/bind", "/api/douyin/session"} and content_length:
         try:
@@ -94,7 +96,12 @@ SESSION_COOKIE = "muz_session"
 SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 
 
-def _set_session_cookie(response: Response, token: str, keep_login: bool) -> None:
+def _request_is_secure(request: Request) -> bool:
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip().lower()
+    return request.url.scheme == "https" or forwarded == "https"
+
+
+def _set_session_cookie(response: Response, token: str, keep_login: bool, *, secure: bool = False) -> None:
     if keep_login:
         response.set_cookie(
             SESSION_COOKIE,
@@ -102,7 +109,7 @@ def _set_session_cookie(response: Response, token: str, keep_login: bool) -> Non
             max_age=SESSION_COOKIE_MAX_AGE,
             httponly=True,
             samesite="lax",
-            secure=False,
+            secure=secure,
             path="/",
         )
     else:
@@ -303,6 +310,8 @@ def _require_douyin_access(user: dict[str, Any]) -> None:
 async def on_startup() -> None:
     ensure_dirs()
     appver.load_version()
+    if config.RELAY_ONLY:
+        return
     configure_live_notifications(asyncio.get_running_loop())
     start_scheduler()
 
@@ -365,7 +374,7 @@ async def register(request: Request, response: Response, payload: dict[str, Any]
     user["registration_invite_id"] = invite_id
     save_user(user)
     token = create_session(user["id"])
-    _set_session_cookie(response, token, bool(payload.get("keep_login", True)))
+    _set_session_cookie(response, token, bool(payload.get("keep_login", True)), secure=_request_is_secure(request))
     return {"token": token, "user": public_user(user)}
 
 
@@ -383,17 +392,17 @@ async def login(request: Request, response: Response, payload: dict[str, Any] = 
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="用户名或密码错误") from exc
     token = create_session(user["id"])
-    _set_session_cookie(response, token, bool(payload.get("keep_login", False)))
+    _set_session_cookie(response, token, bool(payload.get("keep_login", False)), secure=_request_is_secure(request))
     return {"token": token, "user": public_user(user)}
 
 
 @app.get("/api/auth/session")
-async def auth_session(response: Response, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+async def auth_session(request: Request, response: Response, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     token = str(user.get("_token") or "")
     # Refresh the persistent cookie from either an existing cookie or a valid
     # local Bearer token. This repairs browser sessions whose cookie was lost
     # while localStorage still retained the persistent token.
-    _set_session_cookie(response, token, True)
+    _set_session_cookie(response, token, True, secure=_request_is_secure(request))
     return {"token": token, "user": public_user(user)}
 
 
@@ -456,6 +465,9 @@ async def notifications(user: dict[str, Any] = Depends(current_user)) -> list[di
 
 @app.websocket("/api/notifications/ws")
 async def notifications_websocket(websocket: WebSocket, token: str = Query(default="")) -> None:
+    if config.RELAY_ONLY:
+        await websocket.close(code=4404)
+        return
     user = user_from_token(str(token or "").strip())
     if not user:
         await websocket.close(code=4401)
@@ -659,8 +671,51 @@ async def td_photos(
 
 @app.post("/api/td/manual")
 async def td_manual(payload: dict[str, Any] = Body(default={}), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    _ = (payload, user)
-    raise HTTPException(status_code=400, detail="手动 TD 需在校园网由手机端直接向 TD 服务器发起，后端不再代发")
+    student = require_feature(user, "td")
+    campus = str(payload.get("campus") or user.get("td", {}).get("campus") or "xueyuanlu").strip().casefold()
+    campus = {"学院路": "xueyuanlu", "沙河": "shahe"}.get(campus, campus)
+    if campus not in td.MACHINES:
+        raise HTTPException(status_code=400, detail="校区参数无效")
+    try:
+        entrance_machine_id = int(payload.get("entrance_machine_id") or user.get("td", {}).get("entrance_machine_id") or td.MACHINES[campus]["entrance"][0]["id"])
+        exit_machine_id = int(payload.get("exit_machine_id") or user.get("td", {}).get("exit_machine_id") or td.MACHINES[campus]["exit"][0]["id"])
+        gap_seconds = int(payload.get("gap_seconds") or user.get("td", {}).get("gap_seconds") or 240)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="TD 打卡参数格式不正确") from exc
+    valid_entrances = {item["id"] for item in td.MACHINES[campus]["entrance"]}
+    valid_exits = {item["id"] for item in td.MACHINES[campus]["exit"]}
+    if entrance_machine_id not in valid_entrances or exit_machine_id not in valid_exits:
+        raise HTTPException(status_code=400, detail="所选打卡机不属于当前校区")
+    if not 60 <= gap_seconds <= 15 * 60:
+        raise HTTPException(status_code=400, detail="入口至出口时间差需为 1～15 分钟")
+
+    photos = photo_dir(user["id"])
+    entrance_path = photos / "entrance.jpg"
+    exit_path = photos / "exit.jpg"
+    if not entrance_path.exists() or not exit_path.exists():
+        raise HTTPException(status_code=400, detail="请先保存入口和出口打卡照片")
+    try:
+        result = await asyncio.to_thread(
+            td.manual_td,
+            student["student_id"],
+            entrance_machine_id,
+            exit_machine_id,
+            entrance_path.read_bytes(),
+            exit_path.read_bytes(),
+            gap_seconds,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"TD 打卡失败：{exc}") from exc
+    user.setdefault("td", {}).update(
+        {
+            "campus": campus,
+            "entrance_machine_id": entrance_machine_id,
+            "exit_machine_id": exit_machine_id,
+            "gap_seconds": gap_seconds,
+        }
+    )
+    save_user(user)
+    return result
 
 
 @app.get("/api/sunshine/status")
@@ -970,28 +1025,6 @@ async def douyin_run_target(
 
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
-
-
-@app.get("/downloads/td-web-bridge.py")
-async def td_web_bridge_download():
-    path = WEB_DIR / "td_web_bridge.py"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="电脑端 TD 桥接脚本不存在")
-    return FileResponse(path, filename="muztool-td-web-bridge.py", media_type="text/x-python")
-
-
-@app.get("/downloads/td-tampermonkey.user.js")
-async def td_tampermonkey_download():
-    path = WEB_DIR / "td_tampermonkey.user.js"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="篡改猴辅助脚本不存在")
-    return FileResponse(
-        path,
-        filename="muztool-td-tampermonkey.user.js",
-        media_type="text/javascript",
-        content_disposition_type="inline",
-        headers={"Cache-Control": "no-store"},
-    )
 
 
 @app.get("/")
