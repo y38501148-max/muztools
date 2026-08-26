@@ -19,8 +19,11 @@ class PreferencesManager(context: Context) {
         private const val KEY_AUTO_LOGIN = "auto_login"
         private const val KEY_DELIVERED_NOTIFICATIONS = "delivered_notifications"
         private const val KEY_BACKGROUND_POWER_PROMPT_SHOWN = "background_power_prompt_shown"
-        private const val DEFAULT_SERVER_URL = "http://150.138.79.9:10023"
-        private const val LEGACY_SERVER_URL = "http://150.138.79.9:18787"
+        private const val DEFAULT_SERVER_URL = "https://muzermat.online"
+        private val LEGACY_SERVER_URLS = setOf(
+            "http://150.138.79.9:10023",
+            "http://150.138.79.9:18787"
+        )
     }
 
     // Do not fall back to plaintext SharedPreferences: this store contains the
@@ -43,7 +46,7 @@ class PreferencesManager(context: Context) {
     var serverUrl: String
         get() {
             val stored = prefs.getString(KEY_SERVER_URL, null)?.trim()?.trimEnd('/')
-            return if (stored.isNullOrBlank() || stored == LEGACY_SERVER_URL) {
+            return if (stored.isNullOrBlank() || stored in LEGACY_SERVER_URLS) {
                 DEFAULT_SERVER_URL
             } else {
                 stored

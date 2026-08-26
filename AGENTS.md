@@ -40,15 +40,15 @@ muz-tool/
 
 ## 生产环境
 
-- SSH：`ssh server2`
-- 项目：`/root/muz-tool/backend`
-- 数据：`/root/muz-tool/data`
-- 服务：`muz-tool.service`
-- 内部端口：`18787`
-- NAT 公网入口：`http://150.138.79.9:10023`
-- 服务商不支持标准 80/443 域名转发，域名不作为发布链路。
+- 主力：树莓派 server3（校园网 BUAA-Mobile，SSH 经 server2 反向隧道 `ssh server3`）
+- 项目：`/home/pi/muz-tool/backend`
+- 数据：`/home/pi/muz-tool/data`
+- 服务：`muz-tool.service`（127.0.0.1:18787）、`caddy`（443 反代，acme.sh DNS-01 证书）、`mihomo`（127.0.0.1:7890 出口代理）
+- 生产入口：`https://muzermat.online`（仅 AAAA 教育网 IPv6）
+- 旧入口：`http://150.138.79.9:10023`（server2，仅作为旧客户端热更新中继，勿删 data）
 
-部署时禁止删除或覆盖 `/root/muz-tool/data`。同步代码必须排除 `data/`、`.venv`、缓存和测试产物。
+部署时禁止删除或覆盖任何一台服务器的生产 `data/`。同步代码必须排除 `data/`、`.venv`、缓存和测试产物。
+发布热更新时必须两台同时执行，且带上 `MUZTOOLS_DATA` 环境变量，否则会写错数据目录（此坑已踩过）。
 
 ## v1.3.0 账号与权限约定
 
