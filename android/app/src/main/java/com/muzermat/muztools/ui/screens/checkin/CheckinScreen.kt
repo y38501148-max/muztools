@@ -255,16 +255,16 @@ private fun UsageTutorialCard(provider: CheckinProvider) {
             }
             if (expanded) {
                 Spacer(Modifier.height(14.dp))
-                TutorialStep(1, "获取 Token（推荐电脑端微信）", "在电脑安装并打开 Proxyman、Charles 或 mitmproxy，按工具提示安装并信任 HTTPS 证书，再把系统 HTTP/HTTPS 代理指向抓包工具。打开微信中的“${provider.name}”小程序并重新登录。")
-                TutorialStep(2, "复制 32 位 Token", "在抓包记录中搜索 qiandaoerweima.yuleji.top，打开 POST /api/wxapp/auth 响应，复制 data.token.token；也可从 signInfo 等后续请求头 authori-zation 中复制。只分析你自己的账号与流量。")
-                TutorialStep(3, "导入并验证", "回到此页点击“从剪贴板粘贴”，确认后选择“保存并验证”。Token 约 2 小时有效，重新登录小程序会使旧 Token 失效。")
-                TutorialStep(4, "查询并签到", "从老师展示的二维码或链接中取得 AS 开头的活动码，查询活动，核对名称、时间和地点，填写姓名、学号等必填项，再点击“确认签到”。")
+                TutorialStep(1, "请使用电脑端获取 Token", "Android 端不支持抓取微信小程序流量。请在 Mac 电脑浏览器登录 MuzTool WebUI，进入“签到工具”并选择“${provider.name}”。")
+                TutorialStep(2, "下载 macOS 抓取工具", "在电脑端 WebUI 下载并解压 MuzTool Token 抓取工具，右键打开脚本；按提示登录电脑微信并打开对应小程序。")
+                TutorialStep(3, "结束抓包并复制 Token", "完成小程序操作后回到脚本窗口按回车。工具会自动恢复系统代理、输出最新 32 位 Token，并复制到 Mac 剪贴板。")
+                TutorialStep(4, "回到 Android 导入并签到", "通过自己的通用剪贴板或可信方式把 Token 带到本机，点击下方“从剪贴板一键粘贴”并保存验证；然后查询活动、填写必填项并签到。")
                 HorizontalDivider(Modifier.padding(vertical = 10.dp))
                 Row(verticalAlignment = Alignment.Top) {
                     Icon(Icons.Default.Security, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "系统无法越权直接读取微信中的 Token，因此不提供虚假的“自动提取”。剪贴板按钮只会在你主动点击时读取；请勿把 Token 发送给他人。",
+                        "Android 端无法直接抓取微信小程序 Token，必须先在电脑端 WebUI 使用 macOS 工具获取。工具只应分析你自己的账号与流量；请勿把 Token 发送给他人。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

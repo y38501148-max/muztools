@@ -1973,18 +1973,22 @@
         </summary>
         <div style="margin-top: 16px;">
           ${[
-            ["1", "获取 Token（推荐电脑端微信）", `在电脑安装并打开 Proxyman、Charles 或 mitmproxy，按工具提示安装并信任 HTTPS 证书，再把系统 HTTP/HTTPS 代理指向抓包工具。打开微信中的“${esc(selectedProvider.name || providerId)}”小程序并重新登录。`],
-            ["2", "复制 32 位 Token", "在抓包记录中搜索 <code>qiandaoerweima.yuleji.top</code>，打开 <code>POST /api/wxapp/auth</code> 响应并复制 <code>data.token.token</code>；也可从 <code>signInfo</code> 等后续请求头 <code>authori-zation</code> 中复制。只分析你自己的账号与流量。"],
-            ["3", "导入并验证", "回到此页点击“从剪贴板粘贴”，确认后选择“保存并验证”。Token 约 2 小时有效，重新登录小程序会使旧 Token 失效。"],
-            ["4", "查询并签到", "从老师展示的二维码或链接中取得 AS 开头的活动码，查询活动，核对名称、时间和地点，填写姓名、学号等必填项，再点击“执行签到”。"]
+            ["1", "下载 macOS 抓取工具", `点击下方按钮下载 ZIP，解压后右键打开 <code>MuzTool-Checkin-Token-macOS.command</code>。首次运行会检测并安装官方 mitmproxy，并可能要求信任本机 HTTPS 证书。`],
+            ["2", "登录电脑微信并打开小程序", `脚本显示“抓取已启动”后，登录电脑微信，打开“${esc(selectedProvider.name || providerId)}”小程序，并执行一次活动查询或重新登录。`],
+            ["3", "结束抓包并复制 Token", "回到脚本窗口按回车。工具会自动恢复原系统代理、输出最新 32 位 Token，并复制到 macOS 剪贴板。"],
+            ["4", "导入并签到", "回到此页点击“从剪贴板粘贴”，保存并验证 Token；然后输入 AS 开头的活动码，核对活动并填写姓名、学号等必填项后执行签到。"]
           ].map(step => `
             <div class="row" style="align-items: flex-start; margin-bottom: 13px;">
               <span class="badge ok" style="min-width: 24px; justify-content: center;">${step[0]}</span>
               <div style="flex: 1;"><b>${step[1]}</b><p class="muted-sm" style="margin-top: 3px;">${step[2]}</p></div>
             </div>
           `).join("")}
+          <div style="margin: 4px 0 14px;">
+            <a class="btn soft wide" href="/downloads/muz-checkin-token-macos.zip" download="MuzTool-Checkin-Token-macOS.zip">⬇️ 下载 macOS Token 抓取工具</a>
+            <p class="muted-sm" style="margin-top: 7px;">仅支持 macOS。下载后解压，右键打开脚本；若被 Gatekeeper 拦截，请在“系统设置 → 隐私与安全性”中选择仍要打开。</p>
+          </div>
           <div style="border-top: 1px solid var(--line); padding-top: 12px;" class="muted-sm">
-            🔒 浏览器无法越权直接读取微信中的 Token，因此不提供虚假的“自动提取”。剪贴板按钮只在你主动点击时读取；请仅分析自己的流量，也不要把 Token 发送给他人。
+            🔒 WebUI 本身无法越权读取微信 Token。下载工具仅在你主动运行期间分析 <code>qiandaoerweima.yuleji.top</code>，结束时恢复原代理；原始抓包仍含登录凭据，用完后请删除，也不要把 Token 发送给他人。
           </div>
         </div>
       </details>`;

@@ -1171,3 +1171,16 @@ async def web_aes_gcm():
         media_type="text/javascript",
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
+
+
+@app.get("/downloads/muz-checkin-token-macos.zip")
+async def download_checkin_token_macos():
+    return FileResponse(
+        WEB_DIR / "MuzTool-Checkin-Token-macOS.zip",
+        filename="MuzTool-Checkin-Token-macOS.zip",
+        media_type="application/zip",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

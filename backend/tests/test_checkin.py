@@ -1,7 +1,9 @@
 import asyncio
 import base64
 import json
+from io import BytesIO
 from urllib.parse import parse_qs
+from zipfile import ZipFile
 
 import httpx
 import pytest
@@ -89,7 +91,7 @@ def test_provider_registry_contains_qiandaoerweima():
 
 
 def test_validate_token_accepts_hex_and_rejects_others():
-    assert validate_token("  90F1B63BF197EF4A0BB7DDC2331A117D ") == "90f1b63bf197ef4a0bb7ddc2331a117d"
+    assert validate_token("  0123456789ABCDEF0123456789ABCDEF ") == "0123456789abcdef0123456789abcdef"
     for bad in ("", "xyz", "90f1b63bf197ef4a0bb7ddc2331a117", "g" * 32):
         with pytest.raises(ValueError):
             validate_token(bad)
@@ -287,6 +289,19 @@ def test_checkin_routes_require_auth():
         assert client.get("/api/checkin/qiandaoerweima/config").status_code == 401
 
 
+def test_checkin_macos_tool_download():
+    with TestClient(api_module.app) as client:
+        response = client.get("/downloads/muz-checkin-token-macos.zip")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+    assert "MuzTool-Checkin-Token-macOS.zip" in response.headers.get("content-disposition", "")
+    assert response.content.startswith(b"PK")
+    with ZipFile(BytesIO(response.content)) as archive:
+        info = archive.getinfo("MuzTool-Checkin-Token-macOS.command")
+        assert info.external_attr >> 16 & 0o111
+        assert archive.read(info).startswith(b"#!/bin/bash")
+
+
 def test_checkin_unknown_provider_returns_404(client_and_user):
     client, _ = client_and_user
     assert client.get("/api/checkin/nonexistent/config").status_code == 404
@@ -373,8 +388,9 @@ def test_checkin_sign_returns_result(client_and_user, monkeypatch):
     client, user = client_and_user
     _save_token_for(user)
 
-    async def fake_submit(token, code, values, client=None):
+    async def fake_submit(token, code, values, options=None, client=None):
         assert values == {"姓名": "张三"}
+        assert options == {}
         return {"success": True, "message": "签到成功", "activity": "测试活动"}
 
     monkeypatch.setattr(qiandao_provider, "submit_sign", fake_submit)
@@ -390,7 +406,7 @@ def test_checkin_sign_maps_auth_error(client_and_user, monkeypatch):
     client, user = client_and_user
     _save_token_for(user)
 
-    async def fake_submit(token, code, values, client=None):
+    async def fake_submit(token, code, values, options=None, client=None):
         raise CheckinAuthError("签到 token 已失效，请重新获取并配置")
 
     monkeypatch.setattr(qiandao_provider, "submit_sign", fake_submit)
