@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import parse_qs
 from zipfile import ZipFile
 
@@ -312,6 +313,17 @@ def test_checkin_providers_endpoint(client_and_user):
     response = client.get("/api/checkin/providers")
     assert response.status_code == 200
     assert response.json()["providers"][0]["id"] == "qiandaoerweima"
+
+
+def test_checkin_webui_wraps_token_in_encrypted_envelope():
+    html = Path(api_module.WEB_DIR, "index.html").read_text(encoding="utf-8")
+    handler_start = html.index('if (action === "checkin-save-token")')
+    handler_end = html.index('if (action === "checkin-edit-token")', handler_start)
+    handler = html[handler_start:handler_end]
+
+    assert "const payload = {encrypted: await encryptedFields({token})};" in handler
+    assert "body: payload" in handler
+    assert "const payload = await encryptedFields({token});" not in handler
 
 
 def test_checkin_save_token_roundtrip(client_and_user, monkeypatch):

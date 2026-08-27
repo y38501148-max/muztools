@@ -2559,7 +2559,7 @@
         const token = (input && input.value || "").trim();
         if (!token) { toast("请输入签到 token"); return; }
         const providerId = state.checkinProvider;
-        const payload = await encryptedFields({token});
+        const payload = {encrypted: await encryptedFields({token})};
         const result = await api(`/api/checkin/${encodeURIComponent(providerId)}/config`, {method: "PUT", body: payload});
         state.checkinConfigs[providerId] = result;
         state.checkinEditingToken = false;
