@@ -1,6 +1,6 @@
 # MuzTool（盐的工具箱）
 
-MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的个人工具箱。当前版本为 **v1.4.5**。
+MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的个人工具箱。当前版本为 **v1.4.6**。
 
 ## 当前主要能力
 
@@ -66,6 +66,15 @@ muz-admin invite-stats
 
 批量生成不会把邀请码打印到终端。`muzermat` 登录 WebUI 或 Android 后，可在“功能区 → 获取邀请码”随机领取一个可用邀请码。
 
+## 管理员命令
+
+`muz-admin` 和兼容别名 `muzadmin` 均可使用；生产环境执行时必须指定与服务相同的数据目录。
+
+```bash
+MUZTOOLS_DATA=<production-data-dir> .venv/bin/muz-admin list
+MUZTOOLS_DATA=<production-data-dir> .venv/bin/muzadmin list
+```
+
 ## 管理员定向消息
 
 服务端管理员可通过用户 ID、用户名或学号向单个用户发送系统提示：
@@ -85,20 +94,20 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-v1.4.5 使用：
+v1.4.6 使用：
 
-- `versionName = "1.4.5"`
-- `versionCode = 32`
+- `versionName = "1.4.6"`
+- `versionCode = 33`
 
 ## 热更新发布
 
 ```bash
 muz-admin version
-muz-admin set-version 1.4.5 \
-  --code 32 \
-  --title "MuzTool 1.4.5" \
-  --message "恢复新版健康云 TD 查询，并始终显示健康云最新学期" \
-  --apk /path/to/muztools-1.4.5.apk
+muz-admin set-version 1.4.6 \
+  --code 33 \
+  --title "MuzTool 1.4.6" \
+  --message "修复 Tibo X Cookie 校验，并兼容 muzadmin 管理命令" \
+  --apk /path/to/muztools-1.4.6.apk
 ```
 
 完整开发、测试、部署和双端同步要求见 `AGENTS.md`；管理命令说明见 `MUZ-ADMIN.md`。

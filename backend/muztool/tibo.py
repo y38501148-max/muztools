@@ -239,6 +239,57 @@ _GRAPHQL_FEATURES = {
 
 _x_endpoint_cache: dict[str, str] = {}
 
+_X_SCRIPT_RE = re.compile(r"(?:https://abs\.twimg\.com|/)[^\"'\s<>\\]+\.js(?![A-Za-z0-9])(?:\?[^\"'\s<>\\]*)?")
+_X_IMPORT_RE = re.compile(r"[\"']([^\"']+\.js(?:\?[^\"']*)?)[\"']")
+_X_BEARER_RE = re.compile(r"Bearer\s+((?:A{9,})[A-Za-z0-9%_-]{30,})|((?:A{9,})[A-Za-z0-9%_-]{30,})")
+
+
+def _operation_query_id(script: str, operation_names: Iterable[str]) -> str | None:
+    """Extract a Relay operation id from old or current X bundles.
+
+    X has used both ``queryId: \"...\",operationName: \"...\"`` and
+    compiled Relay artifacts such as ``params:{id:`...`,name:`...`}`.  Keep
+    this parser deliberately local to the operation metadata instead of
+    relying on a particular minifier's whitespace or quote style.
+    """
+    for operation_name in operation_names:
+        escaped = re.escape(operation_name)
+        patterns = (
+            rf"queryId\s*[:=]\s*[\"']([A-Za-z0-9_-]+)[\"']\s*,\s*operationName\s*[:=]\s*[\"']{escaped}[\"']",
+            rf"operationName\s*[:=]\s*[\"']{escaped}[\"']\s*,\s*queryId\s*[:=]\s*[\"']([A-Za-z0-9_-]+)[\"']",
+            rf"params:\{{id:\s*`([A-Za-z0-9_-]+)`.{{0,600}}?name:`{escaped}`",
+            rf"params:\{{id:\s*[\"']([A-Za-z0-9_-]+)[\"'].{{0,600}}?name:[\"']{escaped}[\"']",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, script)
+            if match:
+                return match.group(1)
+    return None
+
+
+def _x_script_urls(page_url: str, page_text: str) -> list[str]:
+    """Return JavaScript URLs advertised by an X document."""
+    from urllib.parse import urljoin
+
+    urls: list[str] = []
+    for match in _X_SCRIPT_RE.finditer(page_text):
+        url = urljoin(page_url, match.group(0))
+        if url.endswith(".js") or ".js?" in url:
+            if url not in urls:
+                urls.append(url)
+    return urls
+
+
+def _x_import_urls(base_url: str, script: str) -> list[str]:
+    from urllib.parse import urljoin
+
+    urls: list[str] = []
+    for relative in _X_IMPORT_RE.findall(script):
+        url = urljoin(base_url, relative)
+        if url.startswith("https://abs.twimg.com/") and (url.endswith(".js") or ".js?" in url) and url not in urls:
+            urls.append(url)
+    return urls
+
 
 def _graphql_headers(cookies: dict[str, str], bearer: str) -> dict[str, str]:
     return {
@@ -249,28 +300,64 @@ def _graphql_headers(cookies: dict[str, str], bearer: str) -> dict[str, str]:
     }
 
 
-async def _resolve_x_endpoint(client: httpx.AsyncClient) -> dict[str, str]:
-    """Discover the GraphQL bearer token and query ids from the live bundle."""
-    if _x_endpoint_cache.get("bearer") and _x_endpoint_cache.get("user_tweets"):
+async def _resolve_x_endpoint(client: httpx.AsyncClient, cookies: dict[str, str] | None = None) -> dict[str, str]:
+    """Discover GraphQL credentials and query ids from the live X bundles.
+
+    Since X's migration to the Vite/Rolldown web app, the old single
+    ``responsive-web/client-web/main.<hash>.js`` bundle is gone.  The page
+    now advertises an entry module which imports many hashed chunks, and an
+    authenticated page is needed to load the timeline operations.  Walk the
+    advertised module graph (bounded for safety), accepting both legacy and
+    Relay metadata formats.
+    """
+    if _x_endpoint_cache.get("bearer") and _x_endpoint_cache.get("user_by_screen_name"):
         return _x_endpoint_cache
-    page = await client.get(f"https://x.com/{TIBO_USERNAME}")
+    request_kwargs: dict[str, Any] = {}
+    if cookies:
+        request_kwargs["cookies"] = cookies
+    page = await client.get(f"https://x.com/{TIBO_USERNAME}", **request_kwargs)
     page.raise_for_status()
-    bundle_url = re.search(
-        r"(https://abs\.twimg\.com/responsive-web/client-web/main\.[0-9a-f]+\.js)", page.text
-    )
-    if not bundle_url:
+    scripts = _x_script_urls(str(page.url), page.text)
+    if not scripts:
         raise ConnectionError("无法在 X 页面中定位客户端脚本")
-    bundle = await client.get(bundle_url.group(1))
-    bundle.raise_for_status()
-    bearer = re.search(r"(AAAAAAAAA[A-Za-z0-9%-]{40,})", bundle.text)
-    user_tweets = re.search(r'queryId:\s*"([A-Za-z0-9_-]+)",operationName:"UserTweets"', bundle.text)
-    if not bearer or not user_tweets:
-        raise ConnectionError("无法解析 X GraphQL 接口参数")
-    _x_endpoint_cache["bearer"] = bearer.group(1)
-    _x_endpoint_cache["user_tweets"] = user_tweets.group(1)
-    user_by_name = re.search(r'queryId:\s*"([A-Za-z0-9_-]+)",operationName:"UserByScreenName"', bundle.text)
-    if user_by_name:
-        _x_endpoint_cache["user_by_screen_name"] = user_by_name.group(1)
+
+    queue = list(scripts)
+    visited: set[str] = set()
+    downloaded = 0
+    while queue and downloaded < 120:
+        script_url = queue.pop(0)
+        if script_url in visited:
+            continue
+        visited.add(script_url)
+        try:
+            response = await client.get(script_url)
+            response.raise_for_status()
+        except httpx.HTTPError:
+            logger.debug("Could not fetch X client chunk %s", script_url)
+            continue
+        downloaded += 1
+        script = response.text
+        bearer = _X_BEARER_RE.search(script)
+        if bearer and not _x_endpoint_cache.get("bearer"):
+            _x_endpoint_cache["bearer"] = bearer.group(1) or bearer.group(2)
+        for operation_name in ("UserTweets", "UserTweetsAndReplies"):
+            user_tweets = _operation_query_id(script, (operation_name,))
+            if user_tweets and not _x_endpoint_cache.get("user_tweets"):
+                _x_endpoint_cache["user_tweets"] = user_tweets
+                _x_endpoint_cache["user_tweets_operation"] = operation_name
+                break
+        for operation_name in ("UserByScreenName", "UserByScreenNameQuery", "intentFollowUserByScreenNameQuery"):
+            user_by_name = _operation_query_id(script, (operation_name,))
+            if user_by_name and not _x_endpoint_cache.get("user_by_screen_name"):
+                _x_endpoint_cache["user_by_screen_name"] = user_by_name
+                _x_endpoint_cache["user_by_screen_name_operation"] = operation_name
+                break
+        if _x_endpoint_cache.get("bearer") and _x_endpoint_cache.get("user_by_screen_name") and _x_endpoint_cache.get("user_tweets"):
+            break
+        queue.extend(url for url in _x_import_urls(script_url, script) if url not in visited and url not in queue)
+
+    if not (_x_endpoint_cache.get("bearer") and _x_endpoint_cache.get("user_by_screen_name")):
+        raise ConnectionError("无法解析 X 用户查询接口")
     return _x_endpoint_cache
 
 
@@ -278,14 +365,15 @@ async def _x_user_id(client: httpx.AsyncClient, cookies: dict[str, str]) -> str:
     """Resolve (and cache) Tibo's numeric user id with an authenticated call."""
     if _x_endpoint_cache.get("user_id"):
         return _x_endpoint_cache["user_id"]
-    endpoint = await _resolve_x_endpoint(client)
+    endpoint = await _resolve_x_endpoint(client, cookies)
     query_id = endpoint.get("user_by_screen_name")
     if not query_id:
         raise ConnectionError("无法解析 X 用户查询接口")
+    operation_name = endpoint.get("user_by_screen_name_operation") or "UserByScreenName"
     response = await client.get(
-        f"https://x.com/i/api/graphql/{query_id}/UserByScreenName",
+        f"https://x.com/i/api/graphql/{query_id}/{operation_name}",
         params={
-            "variables": json.dumps({"screen_name": TIBO_USERNAME}),
+            "variables": json.dumps({"screenName": TIBO_USERNAME, "screen_name": TIBO_USERNAME}),
             "features": json.dumps(_GRAPHQL_FEATURES),
         },
         headers=_graphql_headers(cookies, endpoint["bearer"]),
@@ -294,12 +382,16 @@ async def _x_user_id(client: httpx.AsyncClient, cookies: dict[str, str]) -> str:
     _raise_for_x_auth(response)
     if response.status_code != 200:
         raise ConnectionError(f"X 用户查询失败（{response.status_code}）")
-    result = ((response.json().get("data") or {}).get("user") or {}).get("result") or {}
+    payload = response.json()
+    result = ((payload.get("data") or {}).get("user") or {}).get("result") or {}
+    if not result:
+        result = ((payload.get("data") or {}).get("user_result_by_screen_name") or {}).get("result") or {}
     user_id = str(result.get("rest_id") or "")
     if not user_id.isdigit():
         raise ConnectionError("X 用户查询返回异常")
     _x_endpoint_cache["user_id"] = user_id
     return user_id
+
 
 
 def _raise_for_x_auth(response: httpx.Response) -> None:
@@ -417,7 +509,9 @@ async def fetch_tibo_posts_authenticated(
     proxy = TIBO_PROXY_URL or None
     async with httpx.AsyncClient(proxy=proxy, follow_redirects=True, timeout=30, headers={"User-Agent": X_UA}) as client:
         user_id = await _x_user_id(client, cookies)
-        endpoint = await _resolve_x_endpoint(client)
+        endpoint = await _resolve_x_endpoint(client, cookies)
+        if not endpoint.get("user_tweets"):
+            raise ConnectionError("无法解析 X 推文查询接口")
         headers = _graphql_headers(cookies, endpoint["bearer"])
         cutoff = now.astimezone(timezone.utc) - timedelta(hours=lookback_hours)
         by_id: dict[str, TiboPost] = {}
@@ -433,7 +527,7 @@ async def fetch_tibo_posts_authenticated(
             if cursor:
                 variables["cursor"] = cursor
             response = await client.get(
-                f"https://x.com/i/api/graphql/{endpoint['user_tweets']}/UserTweets",
+                f"https://x.com/i/api/graphql/{endpoint['user_tweets']}/{endpoint.get('user_tweets_operation') or 'UserTweets'}",
                 params={"variables": json.dumps(variables), "features": json.dumps(_GRAPHQL_FEATURES)},
                 headers=headers,
                 cookies=cookies,

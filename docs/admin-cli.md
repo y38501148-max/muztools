@@ -3,7 +3,9 @@
 v1.3.1 已取消功能审批。新账号通过邀请码注册，既有账号保持不变并默认拥有全部功能权限。
 
 ```bash
+# `muz-admin` 与兼容别名 `muzadmin` 均可使用
 MUZTOOLS_DATA=<production-data-dir> .venv/bin/muz-admin list
+MUZTOOLS_DATA=<production-data-dir> .venv/bin/muzadmin list
 MUZTOOLS_DATA=<production-data-dir> .venv/bin/muz-admin show <user>
 MUZTOOLS_DATA=<production-data-dir> .venv/bin/muz-admin generate-invites --count 50
 MUZTOOLS_DATA=<production-data-dir> .venv/bin/muz-admin invite-stats

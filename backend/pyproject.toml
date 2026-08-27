@@ -18,6 +18,7 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 
 [project.scripts]
 muz-admin = "muztool.cli:main"
+muzadmin = "muztool.cli:main"
 muztools = "muztool.main:run"
 
 [build-system]

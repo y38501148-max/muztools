@@ -175,6 +175,65 @@ def test_iter_x_cookie_users_requires_enabled_tibo(tmp_path, monkeypatch):
     assert [item["id"] for item in tibo.iter_x_cookie_users()] == ["1"]
 
 
+def test_x_script_discovery_supports_current_entry_module_and_relay_metadata():
+    page_url = "https://x.com/thsottiaux"
+    page = '<script type="module" src="https://abs.twimg.com/x-web/x-web/entry-client-HASH.js"></script>'
+    assert tibo._x_script_urls(page_url, page) == [
+        "https://abs.twimg.com/x-web/x-web/entry-client-HASH.js"
+    ]
+    script = """
+      const client_id = 'AAAAAAAAAAAAAAAAAAAAAtest-value-012345678901234567890';
+      const user = {params:{id:`user-query-id`,metadata:{},name:`intentFollowUserByScreenNameQuery`,operationKind:`query`}};
+      const tweets = {params:{id:`tweets-query-id`,metadata:{},name:`UserTweets`,operationKind:`query`}};
+    """
+    assert tibo._X_BEARER_RE.search(script).group(2) == "AAAAAAAAAAAAAAAAAAAAAtest-value-012345678901234567890"
+    assert tibo._operation_query_id(script, ("intentFollowUserByScreenNameQuery",)) == "user-query-id"
+    assert tibo._operation_query_id(script, ("UserTweets",)) == "tweets-query-id"
+
+
+def test_x_script_discovery_keeps_legacy_operation_format():
+    script = 'const x={queryId:"tweets-id",operationName:"UserTweets"};'
+    assert tibo._operation_query_id(script, ("UserTweets",)) == "tweets-id"
+
+
+def test_resolve_x_endpoint_fetches_current_entry_and_relay_chunk():
+    class FakeResponse:
+        def __init__(self, url, text):
+            self.url = url
+            self.text = text
+
+        def raise_for_status(self):
+            return None
+
+    entry_url = "https://abs.twimg.com/x-web/x-web/entry-client-HASH.js"
+    chunk_url = "https://abs.twimg.com/x-web/x-web/assets/profile-HASH.js"
+    responses = {
+        "https://x.com/thsottiaux": FakeResponse(
+            "https://x.com/thsottiaux",
+            f'<script type="module" src="{entry_url}"></script>',
+        ),
+        entry_url: FakeResponse(entry_url, 'import "./assets/profile-HASH.js";'),
+        chunk_url: FakeResponse(
+            chunk_url,
+            """
+            const client_id = 'AAAAAAAAAAAAAAAAAAAAAtest-value-012345678901234567890';
+            const user = {params:{id:`user-query-id`,metadata:{},name:`intentFollowUserByScreenNameQuery`}};
+            const tweets = {params:{id:`tweets-query-id`,metadata:{},name:`UserTweets`}};
+            """,
+        ),
+    }
+
+    class FakeClient:
+        async def get(self, url, **_kwargs):
+            return responses[url]
+
+    tibo._x_endpoint_cache.clear()
+    endpoint = __import__("asyncio").run(tibo._resolve_x_endpoint(FakeClient()))
+    assert endpoint["bearer"].startswith("AAAAAAAAA")
+    assert endpoint["user_by_screen_name"] == "user-query-id"
+    assert endpoint["user_tweets"] == "tweets-query-id"
+
+
 def test_graphql_tweet_parser_filters_authors_and_reads_cursor():
     payload = {
         "data": {
