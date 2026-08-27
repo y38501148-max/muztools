@@ -24,6 +24,7 @@ from .douyin import (
     normalize_cookies,
     normalize_target,
     run_spark,
+    same_douyin_session,
     list_douyin_friends,
     target_identity,
     validate_douyin_cookies,
@@ -1050,35 +1051,66 @@ async def douyin_session(request: Request, payload: dict[str, Any] = Body(...), 
     try:
         cookie_text = decrypt_hybrid_secret(payload, max_plaintext=256 * 1024)
         cookies = normalize_cookies(cookie_text)
-        cookies, detected_name = await asyncio.to_thread(validate_douyin_cookies, cookies)
+        cookies, detected_name, account_key = await asyncio.to_thread(validate_douyin_cookies, cookies)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    user.setdefault("douyin", {})
-    set_douyin_cookies(user["douyin"], cookies)
-    set_douyin_friends_cache(user["douyin"], [])
-    user["douyin"]["friends_cache_initialized"] = False
-    user["douyin"].pop("friends_cached_at", None)
-    # A Cookie import may represent a different Douyin account. Reusing the
-    # previous account's conversation ids could send to an unintended target.
-    user["douyin"]["enabled"] = False
-    user["douyin"]["targets"] = []
-    user["douyin"]["target_status"] = {}
-    user["douyin"].pop("auto_progress_date", None)
-    user["douyin"].pop("auto_completed_target_keys", None)
-    user["douyin"].pop("auto_blocked_date", None)
-    user["douyin"].pop("auto_blocked_reason", None)
-    user["douyin"]["username"] = str(
-        payload.get("username")
-        or detected_name
-        or user["douyin"].get("username")
+    cfg = user.setdefault("douyin", {})
+    cached_cookies = get_douyin_cookies(cfg)
+    cached_account_key = str(cfg.get("account_key") or "").strip()
+    identity_matches = bool(account_key and cached_account_key and account_key == cached_account_key)
+    cookie_matches = bool(
+        cached_cookies
+        and not (account_key and cached_account_key)
+        and same_douyin_session(cached_cookies, cookies)
+    )
+    account_unchanged = bool(cached_cookies and (identity_matches or cookie_matches))
+    had_previous_account = bool(cached_cookies)
+
+    set_douyin_cookies(cfg, cookies)
+    if account_key:
+        cfg["account_key"] = account_key
+    elif not account_unchanged:
+        cfg.pop("account_key", None)
+
+    if not account_unchanged:
+        set_douyin_friends_cache(cfg, [])
+        cfg["friends_cache_initialized"] = False
+        cfg.pop("friends_cached_at", None)
+        # A different or unidentifiable account must never inherit stable
+        # conversation ids or today's randomized execution state.
+        cfg["enabled"] = False
+        cfg["targets"] = []
+        cfg["target_status"] = {}
+        for key in (
+            "auto_progress_date",
+            "auto_completed_target_keys",
+            "auto_blocked_date",
+            "auto_blocked_reason",
+            "auto_schedule_date",
+            "auto_schedule_hour",
+            "auto_schedule_offset_minutes",
+            "auto_scheduled_at",
+        ):
+            cfg.pop(key, None)
+    cfg["username"] = str(
+        detected_name
+        or cfg.get("username")
         or user.get("display_name")
         or "抖音用户"
     )
     save_user(user)
+    if account_unchanged:
+        message = "抖音 Cookie 校验成功，已保留原火花配置、好友缓存和今日计划"
+    elif had_previous_account:
+        message = "抖音 Cookie 校验成功；检测到账号变化，已清空旧目标和今日计划"
+    else:
+        message = "抖音 Cookie 校验成功并已保存"
     return {
         "valid": True,
-        "nickname": user["douyin"]["username"],
-        "message": "抖音 Cookie 校验成功并已保存",
+        "nickname": cfg["username"],
+        "account_unchanged": account_unchanged,
+        "configuration_preserved": account_unchanged,
+        "message": message,
         "user": public_user(user),
     }
 

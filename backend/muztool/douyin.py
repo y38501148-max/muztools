@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 from contextlib import contextmanager
@@ -21,8 +22,8 @@ CHAT_EDITOR_SELECTOR = (
 MAX_COOKIE_COUNT = 200
 MAX_COOKIE_NAME_LENGTH = 256
 MAX_COOKIE_VALUE_LENGTH = 8192
-MAX_SPARK_TARGETS = 10
-SPARK_SEND_INTERVAL_MS = 10_000
+MAX_SPARK_TARGETS = 15
+SPARK_SEND_INTERVAL_MS = 20_000
 MAX_TARGET_NAME_LENGTH = 80
 MAX_MESSAGE_LENGTH = 200
 
@@ -187,8 +188,92 @@ def _open_chat(browser: Any, cookies: list[dict[str, Any]]) -> tuple[Any, Any, A
     return context, page, search_input
 
 
-def validate_douyin_cookies(cookies: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str]:
-    """Validate imported cookies against Douyin's chat page before persisting them."""
+def _nested_profile_value(payload: Any, key: str, depth: int = 0) -> str:
+    if depth > 5:
+        return ""
+    if isinstance(payload, dict):
+        value = payload.get(key)
+        if value not in (None, ""):
+            text = str(value).strip()
+            if len(text) <= 512:
+                return text
+        for nested in payload.values():
+            found = _nested_profile_value(nested, key, depth + 1)
+            if found:
+                return found
+    elif isinstance(payload, list):
+        for nested in payload[:20]:
+            found = _nested_profile_value(nested, key, depth + 1)
+            if found:
+                return found
+    return ""
+
+
+def _douyin_account_from_payload(payload: Any) -> tuple[str, str]:
+    """Return an opaque stable account key and display name from a profile response."""
+    identity_kind = ""
+    identity = ""
+    for key in ("sec_uid", "sec_user_id", "uid", "user_id", "unique_id"):
+        identity = _nested_profile_value(payload, key)
+        if identity:
+            identity_kind = key
+            break
+    nickname = ""
+    for key in ("nickname", "name", "unique_id"):
+        nickname = _nested_profile_value(payload, key)
+        if nickname:
+            break
+    if not identity:
+        return "", nickname[:32]
+    account_key = hashlib.sha256(f"{identity_kind}:{identity}".encode("utf-8")).hexdigest()
+    return account_key, nickname[:32]
+
+
+def _read_douyin_account(page: Any) -> tuple[str, str]:
+    endpoints = (
+        "https://creator.douyin.com/web/api/media/user/info/",
+        "https://www.douyin.com/aweme/v1/web/user/profile/self/",
+    )
+    fallback_name = ""
+    for endpoint in endpoints:
+        try:
+            response = page.request.get(endpoint, timeout=12_000)
+            if not response.ok:
+                continue
+            account_key, nickname = _douyin_account_from_payload(response.json())
+            fallback_name = fallback_name or nickname
+            if account_key:
+                return account_key, nickname or fallback_name
+        except Exception:
+            continue
+    return "", fallback_name
+
+
+def same_douyin_session(cached: list[dict[str, Any]], imported: list[dict[str, Any]]) -> bool:
+    """Conservative legacy fallback when no cached account key exists yet."""
+    account_cookie_names = {
+        "sessionid",
+        "sessionid_ss",
+        "sid_tt",
+        "sid_tt_ss",
+        "uid_tt",
+        "uid_tt_ss",
+    }
+    old_values = {
+        str(item.get("name") or ""): str(item.get("value") or "")
+        for item in cached
+        if isinstance(item, dict) and str(item.get("name") or "") in account_cookie_names
+    }
+    new_values = {
+        str(item.get("name") or ""): str(item.get("value") or "")
+        for item in imported
+        if isinstance(item, dict) and str(item.get("name") or "") in account_cookie_names
+    }
+    return any(value and new_values.get(name) == value for name, value in old_values.items())
+
+
+def validate_douyin_cookies(cookies: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str, str]:
+    """Validate cookies and return refreshed cookies, nickname and an opaque account key."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
@@ -199,9 +284,10 @@ def validate_douyin_cookies(cookies: list[dict[str, Any]]) -> tuple[list[dict[st
         context = None
         try:
             context, page, _search_input = _open_chat(browser, cookies)
+            account_key, profile_name = _read_douyin_account(page)
             refreshed = normalize_cookies(context.cookies())
             title = page.title().replace("抖音", "").replace("-", "").strip()
-            return refreshed, title[:32]
+            return refreshed, (profile_name or title)[:32], account_key
         finally:
             if context:
                 context.close()
@@ -659,7 +745,7 @@ def run_spark(
                         break
                     if index + 1 < len(targets):
                         # Send configured targets strictly in list order and
-                        # leave a fixed ten-second interval between targets.
+                        # leave a fixed twenty-second interval between targets.
                         page.wait_for_timeout(SPARK_SEND_INTERVAL_MS)
             except Exception as exc:
                 if isinstance(exc, DouyinAutomationError):

@@ -1589,6 +1589,8 @@
     `;
   }
 
+  const MAX_SPARK_TARGETS = 15;
+
   function normalizeSparkTarget(target) {
     const message = String(target?.message || "").trim();
     const mode = target?.mode === "custom" || (!target?.mode && message) ? "custom" : "standard";
@@ -1694,6 +1696,7 @@
       return `<p class="muted-sm" style="padding: 10px 2px;">${hasQuery ? "当前筛选没有匹配好友。" : "未读取到聊天好友，请确认抖音聊天页中已有会话。"}</p>`;
     }
     const selected = new Set(state.sparkTargets.map(sparkConversationKey));
+    const reachedLimit = state.sparkTargets.length >= MAX_SPARK_TARGETS;
     const loadingBanner = state.douyinFriendsLoading
       ? `<p class="muted-sm" style="padding: 8px 2px;">正在从抖音更新好友缓存，当前仍显示旧缓存...</p>`
       : "";
@@ -1709,9 +1712,9 @@
               <span class="muted-sm">${friend.conversation_type === "group" ? "群聊" : (friend.conversation_type === "direct" ? "好友" : "缺少稳定标识")}</span>
             </div>
           </div>
-          <button type="button" class="btn ${added ? "ghost" : "soft"} sm" data-action="add-spark-friend"
-            data-name="${esc(friend.name)}" data-conversation-id="${esc(friend.conversation_id || "")}" data-conversation-short-id="${esc(friend.conversation_short_id || "")}" data-conversation-type="${esc(friend.conversation_type || "")}" ${added || !stable ? "disabled" : ""}>
-            ${added ? "已添加" : (stable ? "添加" : "不可添加")}
+          <button type="button" class="btn ${added || reachedLimit ? "ghost" : "soft"} sm" data-action="add-spark-friend"
+            data-name="${esc(friend.name)}" data-conversation-id="${esc(friend.conversation_id || "")}" data-conversation-short-id="${esc(friend.conversation_short_id || "")}" data-conversation-type="${esc(friend.conversation_type || "")}" ${added || !stable || reachedLimit ? "disabled" : ""}>
+            ${added ? "已添加" : (reachedLimit ? "已达上限" : (stable ? "添加" : "不可添加"))}
           </button>
         </div>`;
     }).join("");
@@ -1824,7 +1827,7 @@
           </button>
         </div>
         <p class="muted-sm" style="margin-top: 10px; line-height: 1.55;">
-          Cookie 会先在浏览器中使用随机 AES-GCM 密钥加密，再提交给服务端加密保存。重新绑定会清空旧账号的目标列表，防止误发。
+          Cookie 会先在浏览器中使用随机 AES-GCM 密钥加密，再提交给服务端加密保存。同一抖音账号重新导入会保留火花配置、好友缓存和今日计划；检测到账号变化时才会清空旧目标。
         </p>
       </div>
 
@@ -1851,7 +1854,7 @@
           <label for="spark-hour">每日自动发送基础时间（整点，0~23）</label>
           <input type="number" id="spark-hour" min="0" max="23" value="${esc(dy.hour ?? 9)}" />
           <p class="muted-sm" style="margin-top:6px;line-height:1.5;">
-            实际执行会在基础整点前后 5 分钟内每天随机一次并固定到当天；列表中的好友按顺序发送，每位好友间隔 10 秒。
+            实际执行会在基础整点前后 5 分钟内每天随机一次并固定到当天；列表中的好友按顺序发送，每位好友间隔 20 秒。
             ${dy.auto_scheduled_at ? `<br>今日计划：${esc(String(dy.auto_scheduled_at).replace("T", " ").split("+")[0].slice(0, 16))}（相对整点${Number(dy.auto_schedule_offset_minutes || 0) >= 0 ? "+" : ""}${Number(dy.auto_schedule_offset_minutes || 0)} 分钟）` : "今日随机时间将在调度器刷新后显示。"}
           </p>
         </div>
@@ -1878,7 +1881,7 @@
           </div>
         </div>
 
-        <div class="section-title" style="margin-top: 18px;">续火花列表</div>
+        <div class="section-title" style="margin-top: 18px;">续火花列表（${state.sparkTargets.length}/${MAX_SPARK_TARGETS}）</div>
         <div id="spark-target-list" class="card scroll-window" style="padding: 4px 14px; margin-bottom: 0;">
           ${renderSparkTargetRows()}
         </div>
@@ -2810,16 +2813,18 @@
       await withButtonLoading(actionBtn, async () => {
         const cookies = $("modal-cookies").value.trim();
         if (!cookies) throw new Error("请输入 Cookie 内容");
-        await api("/api/douyin/session", {
+        const result = await api("/api/douyin/session", {
           method: "POST",
           body: { encrypted_secret: await encryptLargeSecret(cookies) }
         });
-        state.douyinFriendResults = [];
-        state.douyinFriendsLoaded = false;
-        state.douyinFriendsError = "";
-        state.douyinFriendQuery = "";
+        if (!result.configuration_preserved) {
+          state.douyinFriendResults = [];
+          state.douyinFriendsLoaded = false;
+          state.douyinFriendsError = "";
+          state.douyinFriendQuery = "";
+        }
         closeModal();
-        toast("Cookie 导入成功，旧目标已为安全起见清空");
+        toast(result.message || "Cookie 导入成功");
         await refreshAllData();
         await renderPage();
       });
@@ -2844,6 +2849,10 @@
         message: ""
       });
       if (!friend.name) return;
+      if (state.sparkTargets.length >= MAX_SPARK_TARGETS) {
+        toast(`续火花目标最多可添加 ${MAX_SPARK_TARGETS} 个`);
+        return;
+      }
       if (!state.sparkTargets.some(item => sparkConversationKey(item) === sparkConversationKey(friend))) {
         state.sparkTargets.push(friend);
         toast(`已添加${friend.conversation_type === "group" ? "群聊" : "好友"} ${friend.name}，保存配置后生效`);

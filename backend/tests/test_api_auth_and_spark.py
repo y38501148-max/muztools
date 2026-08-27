@@ -677,15 +677,32 @@ def test_douyin_cookie_requires_hybrid_envelope_and_is_encrypted_at_rest(client_
     client, user = client_and_user
     enable_admin_douyin(client, user)
     saved = store.load_user(user["id"])
+    store.set_douyin_cookies(
+        saved["douyin"],
+        [{"name": "sessionid", "value": "old-account-session", "domain": ".douyin.com", "path": "/"}],
+    )
+    store.set_douyin_friends_cache(
+        saved["douyin"],
+        [{"name": "旧好友", "conversation_id": "old-id", "conversation_type": "direct"}],
+    )
     saved["douyin"].update(
         {
+            "account_key": "old-account-key",
             "enabled": True,
             "targets": [{"name": "旧目标", "conversation_id": "old-id", "conversation_type": "direct"}],
             "target_status": {"id:old-id": {"status": "success"}},
+            "auto_schedule_date": "2026-08-27",
+            "auto_schedule_hour": 9,
+            "auto_schedule_offset_minutes": 3,
+            "auto_scheduled_at": "2026-08-27T09:03:00+08:00",
         }
     )
     store.save_user(saved)
-    monkeypatch.setattr(api_module, "validate_douyin_cookies", lambda cookies: (cookies, "测试抖音账号"))
+    monkeypatch.setattr(
+        api_module,
+        "validate_douyin_cookies",
+        lambda cookies: (cookies, "测试抖音账号", "new-account-key"),
+    )
 
     plaintext = client.post("/api/douyin/session", json={"cookies": "sessionid=plaintext-secret"})
     assert plaintext.status_code == 400
@@ -697,6 +714,8 @@ def test_douyin_cookie_requires_hybrid_envelope_and_is_encrypted_at_rest(client_
     response = client.post("/api/douyin/session", json=hybrid_secret_payload(client, cookie_json))
     assert response.status_code == 200
     assert response.json()["valid"] is True
+    assert response.json()["account_unchanged"] is False
+    assert "账号变化" in response.json()["message"]
 
     reloaded = store.load_user(user["id"])
     raw = store.user_path(user["id"]).read_text(encoding="utf-8")
@@ -708,12 +727,66 @@ def test_douyin_cookie_requires_hybrid_envelope_and_is_encrypted_at_rest(client_
     assert reloaded["douyin"]["enabled"] is False
     assert reloaded["douyin"]["targets"] == []
     assert reloaded["douyin"]["target_status"] == {}
+    assert reloaded["douyin"]["friends_cache_initialized"] is False
+    assert "auto_scheduled_at" not in reloaded["douyin"]
+    assert "auto_schedule_date" not in reloaded["douyin"]
+
+
+def test_same_douyin_account_import_preserves_configuration_cache_and_daily_time(client_and_user, monkeypatch):
+    client, user = client_and_user
+    enable_admin_douyin(client, user)
+    saved = store.load_user(user["id"])
+    store.set_douyin_cookies(
+        saved["douyin"],
+        [{"name": "sessionid", "value": "old-session", "domain": ".douyin.com", "path": "/"}],
+    )
+    friends = [{"name": "保留好友", "conversation_id": "friend-1", "conversation_type": "direct"}]
+    store.set_douyin_friends_cache(saved["douyin"], friends)
+    saved["douyin"].update(
+        {
+            "account_key": "same-account-key",
+            "username": "原昵称",
+            "enabled": True,
+            "targets": [{"name": "保留好友", "conversation_id": "friend-1", "conversation_type": "direct"}],
+            "target_status": {"id:friend-1": {"status": "success"}},
+            "auto_progress_date": "2026-08-27",
+            "auto_completed_target_keys": ["id:friend-1"],
+            "auto_schedule_date": "2026-08-27",
+            "auto_schedule_hour": 9,
+            "auto_schedule_offset_minutes": -4,
+            "auto_scheduled_at": "2026-08-27T08:56:00+08:00",
+        }
+    )
+    store.save_user(saved)
+    monkeypatch.setattr(
+        api_module,
+        "validate_douyin_cookies",
+        lambda cookies: (cookies, "新昵称", "same-account-key"),
+    )
+    imported = json.dumps(
+        [{"name": "sessionid", "value": "refreshed-session", "domain": ".douyin.com", "path": "/"}]
+    )
+
+    response = client.post("/api/douyin/session", json=hybrid_secret_payload(client, imported))
+
+    assert response.status_code == 200
+    assert response.json()["account_unchanged"] is True
+    assert response.json()["configuration_preserved"] is True
+    assert "已保留" in response.json()["message"]
+    reloaded = store.load_user(user["id"])
+    assert reloaded["douyin"]["enabled"] is True
+    assert reloaded["douyin"]["targets"][0]["conversation_id"] == "friend-1"
+    assert reloaded["douyin"]["target_status"]["id:friend-1"]["status"] == "success"
+    assert reloaded["douyin"]["auto_scheduled_at"] == "2026-08-27T08:56:00+08:00"
+    assert reloaded["douyin"]["auto_completed_target_keys"] == ["id:friend-1"]
+    assert store.get_douyin_friends_cache(reloaded["douyin"]) == friends
+    assert store.get_douyin_cookies(reloaded["douyin"])[0]["value"] == "refreshed-session"
 
 
 def test_douyin_hybrid_envelope_rejects_tampering(client_and_user, monkeypatch):
     client, user = client_and_user
     enable_admin_douyin(client, user)
-    monkeypatch.setattr(api_module, "validate_douyin_cookies", lambda cookies: (cookies, "测试账号"))
+    monkeypatch.setattr(api_module, "validate_douyin_cookies", lambda cookies: (cookies, "测试账号", "account-key"))
     payload = hybrid_secret_payload(client, '[{"name":"sessionid","value":"secret"}]')
     sealed = bytearray(base64.b64decode(payload["encrypted_secret"]["ciphertext"]))
     sealed[-1] ^= 1
@@ -734,9 +807,15 @@ def test_douyin_config_requires_stable_targets_and_enforces_limits(client_and_us
     assert unstable.status_code == 400
     assert "稳定标识" in unstable.json()["detail"]
 
+    allowed = [
+        {"name": f"目标{i}", "conversation_id": f"d{i}", "conversation_type": "direct"}
+        for i in range(15)
+    ]
+    assert client.put("/api/douyin/config", json={"enabled": False, "targets": allowed}).status_code == 200
+
     too_many = [
         {"name": f"目标{i}", "conversation_id": f"d{i}", "conversation_type": "direct"}
-        for i in range(11)
+        for i in range(16)
     ]
     assert client.put("/api/douyin/config", json={"enabled": False, "targets": too_many}).status_code == 400
     assert client.put("/api/douyin/config", json={"default_message": "x" * 201}).status_code == 400
@@ -802,6 +881,9 @@ def test_web_exposes_single_target_spark_test_action(client_and_user):
     assert response.status_code == 200
     assert 'data-action="run-spark-target"' in response.text
     assert 'api("/api/douyin/run-target"' in response.text
+    assert "const MAX_SPARK_TARGETS = 15" in response.text
+    assert "每位好友间隔 20 秒" in response.text
+    assert "configuration_preserved" in response.text
 
 
 def test_tibo_x_session_import_encrypts_at_rest(client_and_user, monkeypatch):

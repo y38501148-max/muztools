@@ -7,15 +7,51 @@ from muztool.douyin import (
     DouyinAmbiguousSend,
     DouyinBusy,
     DouyinStructureChanged,
+    MAX_SPARK_TARGETS,
+    SPARK_SEND_INTERVAL_MS,
     _execution_guard,
     _conversation_friend,
+    _douyin_account_from_payload,
     _send_and_confirm,
     _target_matches,
     _verify_active_conversation,
     message_for,
     normalize_target,
     run_spark,
+    same_douyin_session,
 )
+
+
+def test_spark_limits_and_send_interval_match_product_settings():
+    assert MAX_SPARK_TARGETS == 15
+    assert SPARK_SEND_INTERVAL_MS == 20_000
+
+
+def test_account_profile_uses_stable_identifier_without_exposing_it():
+    first_key, nickname = _douyin_account_from_payload(
+        {"data": {"user": {"sec_uid": "stable-account-id", "nickname": "测试用户"}}}
+    )
+    second_key, _ = _douyin_account_from_payload(
+        {"user_info": {"sec_uid": "stable-account-id", "nickname": "新昵称"}}
+    )
+    other_key, _ = _douyin_account_from_payload(
+        {"data": {"sec_uid": "other-account-id", "nickname": "其他用户"}}
+    )
+    assert first_key == second_key
+    assert first_key != other_key
+    assert first_key != "stable-account-id"
+    assert nickname == "测试用户"
+
+
+def test_same_douyin_session_only_matches_account_session_cookies():
+    cached = [{"name": "sessionid", "value": "account-session"}, {"name": "ttwid", "value": "browser"}]
+    assert same_douyin_session(cached, [{"name": "sessionid", "value": "account-session"}]) is True
+    assert same_douyin_session(cached, [{"name": "sessionid", "value": "different"}]) is False
+    assert same_douyin_session(
+        [{"name": "uid_tt", "value": "stable-user"}],
+        [{"name": "uid_tt", "value": "stable-user"}],
+    ) is True
+    assert same_douyin_session(cached, [{"name": "ttwid", "value": "browser"}]) is False
 
 
 def test_normalize_target_defaults_to_standard_mode():

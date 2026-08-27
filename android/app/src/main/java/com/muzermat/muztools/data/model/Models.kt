@@ -206,6 +206,7 @@ data class DouyinSessionState(
     val username: String = "",
     val enabled: Boolean = false,
     @SerialName("default_message") val defaultMessage: String = "续火花",
+    @SerialName("max_targets") val maxTargets: Int = 15,
     val targets: List<SparkTarget> = emptyList(),
     val hour: Int = 9,
     @SerialName("last_run") val lastRun: String = "",
@@ -224,6 +225,9 @@ data class DouyinSessionState(
 data class DouyinSessionResponse(
     val valid: Boolean = false,
     val nickname: String? = null,
+    val message: String? = null,
+    @SerialName("account_unchanged") val accountUnchanged: Boolean = false,
+    @SerialName("configuration_preserved") val configurationPreserved: Boolean = false,
     @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("expire_time") val expireTime: String? = null,
     val douyin: DouyinSessionState? = null,

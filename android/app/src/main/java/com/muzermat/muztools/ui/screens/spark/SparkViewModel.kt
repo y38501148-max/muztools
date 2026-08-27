@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+const val MAX_SPARK_TARGETS = 15
+
 
 data class SparkUiState(
     val isLoading: Boolean = false,
@@ -208,9 +210,18 @@ class SparkViewModel(
             result.fold(
                 onSuccess = { session ->
                     _uiState.update {
-                        it.copy(session = session, config = session.resolvedConfig(), friends = emptyList(), friendsLoaded = false, friendsCachedAt = "")
+                        val preserveCache = session.configurationPreserved
+                        it.copy(
+                            session = session,
+                            config = session.resolvedConfig(),
+                            friends = if (preserveCache) it.friends else emptyList(),
+                            friendsLoaded = preserveCache && it.friendsLoaded,
+                            friendsCachedAt = if (preserveCache) it.friendsCachedAt else ""
+                        )
                     }
-                    _messageFlow.emit(if (session.valid) "抖音 Cookie 校验成功，旧目标已安全清空" else "Cookie 状态已更新")
+                    _messageFlow.emit(
+                        session.message ?: if (session.valid) "抖音 Cookie 校验成功" else "Cookie 状态已更新"
+                    )
                     loadData(isRefresh = true)
                 },
                 onFailure = { error -> _messageFlow.emit("提交失败: ${error.message}") }
@@ -234,6 +245,10 @@ class SparkViewModel(
             return
         }
         val current = _uiState.value.config
+        if (current.targets.size >= MAX_SPARK_TARGETS) {
+            viewModelScope.launch { _messageFlow.emit("续火花目标最多可添加 $MAX_SPARK_TARGETS 个") }
+            return
+        }
         if (current.targets.any { it.identityKey() == friend.identityKey() }) {
             viewModelScope.launch { _messageFlow.emit("该会话已在续火花列表中") }
             return

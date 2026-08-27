@@ -171,7 +171,7 @@ fun SparkScreen(viewModel: SparkViewModel) {
                             Column(Modifier.weight(1f)) {
                                 Text("自动续火花", fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "到达设定时间后自动执行，好友按列表顺序逐个发送，每位间隔 10 秒；服务短暂重启也会补执行",
+                                    "到达设定时间后自动执行，好友按列表顺序逐个发送，每位间隔 20 秒；服务短暂重启也会补执行",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -275,11 +275,11 @@ fun SparkScreen(viewModel: SparkViewModel) {
             item {
                 Spacer(Modifier.height(14.dp))
                 SectionHeader(
-                    title = "续火花好友名单",
+                    title = "续火花好友名单（${uiState.config.targets.size}/$MAX_SPARK_TARGETS）",
                     action = {
                         TextButton(
                             onClick = { showAddFriendDialog = true },
-                            enabled = uiState.session.valid
+                            enabled = uiState.session.valid && uiState.config.targets.size < MAX_SPARK_TARGETS
                         ) {
                             Icon(Icons.Default.PersonAdd, null, Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
@@ -386,7 +386,7 @@ fun SparkScreen(viewModel: SparkViewModel) {
                     Text("2. 打开 www.douyin.com/chat，完成登录及安全验证。")
                     Text("3. 点击 Cookie-Editor，选择 Export → JSON。")
                     Text("4. 复制完整 JSON 数组，回到 MuzTool 导入。")
-                    Text("导入时会使用随机 AES-GCM 密钥加密传输，服务端再加密保存。重新绑定会清空旧目标。", style = MaterialTheme.typography.bodySmall)
+                    Text("导入时会使用随机 AES-GCM 密钥加密传输，服务端再加密保存。同一抖音账号重新导入会保留火花配置、好友缓存和今日计划；检测到账号变化时才会清空。", style = MaterialTheme.typography.bodySmall)
                     Text("Cookie 等同于登录凭证，请勿截图或转发给其他人。", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             },
@@ -478,6 +478,7 @@ private fun AddFriendDialog(
     onDismiss: () -> Unit
 ) {
     val addedConversations = uiState.config.targets.map { it.identityKey() }.toSet()
+    val reachedLimit = uiState.config.targets.size >= MAX_SPARK_TARGETS
     val filtered = uiState.friends.filter { it.name.contains(uiState.friendSearchQuery, ignoreCase = true) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -518,7 +519,7 @@ private fun AddFriendDialog(
                         items(filtered, key = { it.identityKey() }) { friend ->
                             val added = friend.identityKey() in addedConversations
                             Row(
-                                modifier = Modifier.fillMaxWidth().clickable(enabled = !added) { onAdd(friend) }.padding(vertical = 10.dp),
+                                modifier = Modifier.fillMaxWidth().clickable(enabled = !added && !reachedLimit) { onAdd(friend) }.padding(vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Box(
@@ -540,7 +541,14 @@ private fun AddFriendDialog(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                Text(if (added) "已添加" else "添加", color = if (added) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
+                                Text(
+                                    when {
+                                        added -> "已添加"
+                                        reachedLimit -> "已达上限"
+                                        else -> "添加"
+                                    },
+                                    color = if (added || reachedLimit) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
+                                )
                             }
                             HorizontalDivider()
                         }

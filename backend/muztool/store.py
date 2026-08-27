@@ -93,6 +93,7 @@ def empty_user(username: str, password: str, display_name: str) -> dict[str, Any
         },
         "douyin": {
             "cookies_encrypted": "",
+            "account_key": "",
             "unique_id": "",
             "username": "",
             "enabled": False,
@@ -390,6 +391,7 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
             "username": user.get("douyin", {}).get("username", ""),
             "enabled": bool(user.get("douyin", {}).get("enabled")),
             "default_message": user.get("douyin", {}).get("default_message", "续火花"),
+            "max_targets": 15,
             "targets": user.get("douyin", {}).get("targets", []),
             "hour": user.get("douyin", {}).get("hour", 9),
             "last_run": user.get("douyin", {}).get("last_run", ""),
