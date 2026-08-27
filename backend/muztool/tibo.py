@@ -300,7 +300,12 @@ def _graphql_headers(cookies: dict[str, str], bearer: str) -> dict[str, str]:
     }
 
 
-async def _resolve_x_endpoint(client: httpx.AsyncClient, cookies: dict[str, str] | None = None) -> dict[str, str]:
+async def _resolve_x_endpoint(
+    client: httpx.AsyncClient,
+    cookies: dict[str, str] | None = None,
+    *,
+    require_tweets: bool = False,
+) -> dict[str, str]:
     """Discover GraphQL credentials and query ids from the live X bundles.
 
     Since X's migration to the Vite/Rolldown web app, the old single
@@ -310,7 +315,11 @@ async def _resolve_x_endpoint(client: httpx.AsyncClient, cookies: dict[str, str]
     advertised module graph (bounded for safety), accepting both legacy and
     Relay metadata formats.
     """
-    if _x_endpoint_cache.get("bearer") and _x_endpoint_cache.get("user_by_screen_name"):
+    if (
+        _x_endpoint_cache.get("bearer")
+        and _x_endpoint_cache.get("user_by_screen_name")
+        and (not require_tweets or _x_endpoint_cache.get("user_tweets"))
+    ):
         return _x_endpoint_cache
     request_kwargs: dict[str, Any] = {}
     if cookies:
@@ -352,12 +361,18 @@ async def _resolve_x_endpoint(client: httpx.AsyncClient, cookies: dict[str, str]
                 _x_endpoint_cache["user_by_screen_name"] = user_by_name
                 _x_endpoint_cache["user_by_screen_name_operation"] = operation_name
                 break
-        if _x_endpoint_cache.get("bearer") and _x_endpoint_cache.get("user_by_screen_name") and _x_endpoint_cache.get("user_tweets"):
+        if (
+            _x_endpoint_cache.get("bearer")
+            and _x_endpoint_cache.get("user_by_screen_name")
+            and (not require_tweets or _x_endpoint_cache.get("user_tweets"))
+        ):
             break
         queue.extend(url for url in _x_import_urls(script_url, script) if url not in visited and url not in queue)
 
     if not (_x_endpoint_cache.get("bearer") and _x_endpoint_cache.get("user_by_screen_name")):
         raise ConnectionError("无法解析 X 用户查询接口")
+    if require_tweets and not _x_endpoint_cache.get("user_tweets"):
+        raise ConnectionError("无法解析 X 推文查询接口")
     return _x_endpoint_cache
 
 
@@ -509,9 +524,7 @@ async def fetch_tibo_posts_authenticated(
     proxy = TIBO_PROXY_URL or None
     async with httpx.AsyncClient(proxy=proxy, follow_redirects=True, timeout=30, headers={"User-Agent": X_UA}) as client:
         user_id = await _x_user_id(client, cookies)
-        endpoint = await _resolve_x_endpoint(client, cookies)
-        if not endpoint.get("user_tweets"):
-            raise ConnectionError("无法解析 X 推文查询接口")
+        endpoint = await _resolve_x_endpoint(client, cookies, require_tweets=True)
         headers = _graphql_headers(cookies, endpoint["bearer"])
         cutoff = now.astimezone(timezone.utc) - timedelta(hours=lookback_hours)
         by_id: dict[str, TiboPost] = {}
