@@ -8,7 +8,8 @@
 - 生产主机位于校园网环境，可直接访问校园内部的签到、TD 和阳光体育服务；
 - 服务端默认不通过 WebVPN 访问校园业务；如需兼容旧环境，必须在受控部署配置中显式开启；
 - 服务使用独立的数据目录，部署代码时不得同步、删除或覆盖该目录；
-- TD 上游地址通过部署环境变量 `MUZTOOLS_TD_HOST` 提供，不写入公开仓库。
+- TD 上游地址通过部署环境变量 `MUZTOOLS_TD_HOST` 提供，不写入公开仓库；
+- 本机反向代理或 Cloudflare Tunnel 回源时设置 `MUZTOOLS_TRUST_PROXY_HEADERS=1`。应用只在直接连接来自回环地址时采用转发头；直接暴露 Uvicorn 时保持关闭。
 
 ```bash
 rsync -az \
@@ -84,9 +85,12 @@ dig +short AAAA <public-domain>
 curl -4 -fsS https://<public-domain>/api/health
 curl -6 -fsS https://<public-domain>/api/health
 curl -fsS https://<public-domain>/api/security/public-key
+curl -sS -o /dev/null -w '%{http_code}\n' https://<public-domain>/openapi.json
+curl -sS -o /dev/null -w '%{http_code}\n' https://<public-domain>/api/app/apk
+curl -fsSI https://<public-domain>/ | grep -Ei 'strict-transport-security|content-security-policy'
 ```
 
-响应头应显示请求经过 Cloudflare，并确认 WebSocket 鉴权拒绝仍能穿过 Tunnel。不要使用真实密码、Token 或邀请码做连通性探测。应用层 RSA 继续保护凭据请求正文，但 Cloudflare 会终止公网 TLS，因此不能将此部署描述为端到端加密。
+Schema 应返回 404，未认证 APK 请求应返回 401，首页应包含 HSTS 与 CSP。响应头应显示请求经过 Cloudflare，并确认 WebSocket 鉴权拒绝仍能穿过 Tunnel。WebSocket 地址不得带 `token` 查询参数；Android 使用 Authorization 请求头，浏览器使用 Cookie 或连接建立后的首个认证消息。不要使用真实密码、Token 或邀请码做连通性探测。应用层 RSA 继续避免凭据直接出现在请求正文中，但公钥是公开的、不能阻止攻击者构造请求；Cloudflare 会终止公网 TLS，因此不能将此部署描述为端到端加密。完整检查项见 [安全基线](security.md)。
 
 回滚时先在注册商恢复原 NS 或把域名切回已确认可达的入口；等待 DNS TTL 后再停用 Tunnel。不要删除主服务数据目录、Tunnel 凭据或原 Caddy 配置，直到回滚验证完成。
 
@@ -98,7 +102,7 @@ curl -fsS https://<public-domain>/api/security/public-key
 - `/api/app/version`
 - `/api/app/apk`
 
-中继必须设置 `MUZTOOLS_RELAY_ONLY=1`。该模式不会启动调度器，也不会提供登录、签到、TD、阳光体育、通知或抖音功能，避免与主服务重复执行任务。中继数据目录仅保存版本元数据和安装包，不得连接生产用户数据目录。
+中继必须设置 `MUZTOOLS_RELAY_ONLY=1`。该模式不会启动调度器，也不会提供登录、签到、TD、阳光体育、通知或抖音功能，避免与主服务重复执行任务。中继数据目录仅保存版本元数据和安装包，不得连接生产用户数据目录。中继为了兼容没有主服务会话数据的旧客户端而公开更新制品；APK 因而必须视为公开分发物且不得包含服务端秘密。需要将 APK 作为保密资产时必须停用中继并迁移到独立认证的制品分发服务。
 
 ## 敏感配置
 

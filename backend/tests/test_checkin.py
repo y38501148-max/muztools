@@ -272,13 +272,13 @@ def client_and_user(tmp_path, monkeypatch):
     monkeypatch.setattr(api_module, "start_scheduler", lambda: None)
     config.ensure_dirs()
 
-    user = store.create_user("checkin_user", "Secret1", "Checkin")
+    user = store.create_user("checkin_user", "StrongPass1!", "Checkin")
     store.save_user(user)
 
     with TestClient(api_module.app) as client:
         login = client.post(
             "/api/auth/login",
-            json=encrypted_payload(client, {"username": "checkin_user", "password": "Secret1"}),
+            json=encrypted_payload(client, {"username": "checkin_user", "password": "StrongPass1!"}),
         )
         assert login.status_code == 200
         yield client, user

@@ -11,7 +11,20 @@ MuzTool v1.3.3 已接入 Firebase Cloud Messaging（FCM）客户端和服务端�
 1. Android 客户端配置：放到 `android/app/google-services.json`；
 2. 服务端凭据：下载 Firebase Admin SDK service-account JSON，放到生产数据目录，例如 `<production-data-dir>/firebase-service-account.json`。
 
-这两个文件都包含敏感配置，不能提交到 Git、不能放到 APK 之外的公开下载目录，也不能在聊天中粘贴。仓库只保留 `google-services.json.example` 说明模板。
+`google-services.json` 中的 API Key、App ID、Project Number 和包名是 Firebase 客户端运行所需的公开标识，构建后必然能从 APK 中读取；它们不能授予 FCM 服务端发送权限。文件仍保持 Git 忽略，避免公开构建配置。Firebase Admin service-account JSON 才是必须严格保密的服务端凭据，不能提交 Git、打进 APK、放入公开下载目录或粘贴到聊天中。
+
+## Firebase 控制台安全配置
+
+代码无法替代项目侧配置。正式构建前必须：
+
+1. 将 Android 客户端 API Key 限制为包名 `com.muzermat.muztools` 与正式签名证书指纹，并限制到实际使用的 API；
+2. 对支持的 Firebase 产品启用 Play Integrity App Check；
+3. 关闭未使用的 Firestore、Realtime Database、Storage 和 Authentication；已使用产品的规则默认拒绝匿名访问并补规则测试；
+4. 配置配额、预算和异常流量告警；
+5. 如果现有客户端 Key 曾无限制，创建并验证新的受限 Key后发布新 APK，再停用旧 Key；
+6. service account 仅授予发送 FCM 所需的最小权限，疑似泄露时立即撤销并轮换。
+
+客户端 API Key 公开不等于可以“灌 FCM 消息”；发送消息需要 Admin SDK/service-account 权限。但未受限 Key 仍可能被用于消耗 Firebase Installations 或其他误开放产品的配额，因此以上控制不可省略。完整基线见 [安全基线](security.md)。
 
 ## 服务端配置
 
@@ -40,13 +53,13 @@ FCM 注册接口为：
 
 ## Android 构建
 
-未提供 `android/app/google-services.json` 时，项目仍可编译，但 APK 不会获得 Firebase 项目配置，运行时会自动回退到 MuzTool 原有的 WebSocket/前台通知机制。
+未提供 `android/app/google-services.json`，或未显式传入 `-PenableFirebase=true` 时，项目仍可编译，但 APK 不会包含 Firebase 客户端标识，也不会获得 Firebase 项目配置，运行时会自动回退到 MuzTool 原有的 WebSocket/前台通知机制。安全修复版本默认采用此模式。
 
-提供真实配置后再构建：
+只有在 `docs/security.md` 中的 API Key 应用/API 限制、Firebase 产品规则、配额告警和正式签名证书指纹均已验证后，才使用真实配置构建 FCM 版本：
 
 ```bash
 cd android
-./gradlew :app:assembleDebug
+./gradlew -PenableFirebase=true :app:assembleDebug
 ```
 
 同时配置 Android Firebase 项目和服务端 Admin SDK 凭据只是建立 FCM 链路的前提，还必须验证以下状态：

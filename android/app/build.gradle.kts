@@ -13,8 +13,8 @@ android {
         applicationId = "com.muzermat.muztools"
         minSdk = 26
         targetSdk = 36
-        versionCode = 30
-        versionName = "1.4.3"
+        versionCode = 31
+        versionName = "1.4.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -90,9 +90,12 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
-// The Firebase project file is intentionally not committed. When a real
-// google-services.json is supplied locally, enable the Google Services plugin
-// so FirebaseMessaging can obtain the project configuration.
-if (file("google-services.json").exists()) {
+// Firebase client identifiers are intentionally opt-in because they are
+// public in every APK. Enable only after the Firebase console restrictions in
+// docs/security.md have been verified for the release signing certificate.
+val enableFirebase = providers.gradleProperty("enableFirebase")
+    .orNull
+    ?.equals("true", ignoreCase = true) == true
+if (enableFirebase && file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
 }

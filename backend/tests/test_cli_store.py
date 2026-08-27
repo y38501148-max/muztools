@@ -11,6 +11,9 @@ from muztool.cli import main  # noqa: E402
 from muztool.security import validate_password, validate_username  # noqa: E402
 
 
+TEST_PASSWORD = "StrongPass1!"
+
+
 @pytest.fixture(autouse=True)
 def isolated_data(tmp_path, monkeypatch):
     monkeypatch.setenv("MUZTOOLS_DATA", str(tmp_path))
@@ -27,7 +30,7 @@ def isolated_data(tmp_path, monkeypatch):
 
 
 def test_existing_users_receive_default_permissions_and_signin_can_be_enabled(capsys):
-    user = store.create_user("alice_1", "Secret1", "Alice")
+    user = store.create_user("alice_1", TEST_PASSWORD, "Alice")
     user["student"]["student_id"] = "25371537"
     user["student"]["real_name"] = "测试"
     user["student"]["status"] = "verified"
@@ -59,7 +62,7 @@ def test_generate_invites_and_stats_do_not_print_plaintext_codes(capsys):
 
 
 def test_message_command_persists_and_queues_notification_without_echoing_body(capsys, monkeypatch):
-    user = store.create_user("notice_1", "Secret1", "Notice")
+    user = store.create_user("notice_1", TEST_PASSWORD, "Notice")
     monkeypatch.setattr(notify, "_live_loop", None)
 
     main(["message", user["id"], "后台", "测试消息", "--title", "测试提示"])
@@ -84,7 +87,7 @@ def test_message_command_persists_and_queues_notification_without_echoing_body(c
 
 
 def test_message_command_rejects_oversized_body():
-    user = store.create_user("notice_2", "Secret1", "Notice")
+    user = store.create_user("notice_2", TEST_PASSWORD, "Notice")
     with pytest.raises(SystemExit, match="500"):
         main(["message", user["id"], "x" * 501])
 
@@ -95,11 +98,15 @@ def test_username_and_password_rules():
         validate_username("abc")
     with pytest.raises(ValueError):
         validate_password("abcdef")
-    assert validate_password("Abcdef1") == "Abcdef1"
+    with pytest.raises(ValueError):
+        validate_password("Abcdef1234")
+    with pytest.raises(ValueError):
+        validate_password("Ab1!short")
+    assert validate_password("Abcdef1234!") == "Abcdef1234!"
 
 
 def test_legacy_student_password_migrates_to_encrypted_storage():
-    user = store.create_user("legacy_1", "Secret1", "Legacy")
+    user = store.create_user("legacy_1", TEST_PASSWORD, "Legacy")
     raw = store.load_user(user["id"])
     raw["student"].pop("password_encrypted", None)
     raw["student"]["password"] = "CampusSecret1"
@@ -113,7 +120,7 @@ def test_legacy_student_password_migrates_to_encrypted_storage():
 
 
 def test_legacy_douyin_secrets_migrate_and_user_file_is_private(isolated_data):
-    user = store.create_user("muzermat", "Secret1", "Admin")
+    user = store.create_user("muzermat", TEST_PASSWORD, "Admin")
     raw = store.load_user(user["id"])
     raw["douyin"].pop("cookies_encrypted", None)
     raw["douyin"]["cookies"] = [
@@ -140,7 +147,7 @@ def test_legacy_douyin_secrets_migrate_and_user_file_is_private(isolated_data):
 
 
 def test_nonadmin_douyin_stays_enabled_after_migration():
-    user = store.create_user("ordinary_1", "Secret1", "Ordinary")
+    user = store.create_user("ordinary_1", TEST_PASSWORD, "Ordinary")
     user["douyin"]["enabled"] = True
     store.save_user(user)
     reloaded = store.load_user(user["id"])
@@ -150,7 +157,7 @@ def test_nonadmin_douyin_stays_enabled_after_migration():
 
 
 def test_migration_restores_admin_only_disabled_douyin():
-    user = store.create_user("ordinary_2", "Secret1", "Ordinary")
+    user = store.create_user("ordinary_2", TEST_PASSWORD, "Ordinary")
     user["douyin"]["enabled"] = False
     user["douyin"]["disabled_reason"] = "temporary_admin_only"
     store.save_user(user)

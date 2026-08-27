@@ -12,10 +12,11 @@ object Credentials {
     }
 
     fun validatePassword(password: String): String? {
-        if (password.length !in 6..18) return "密码须为 6～18 位"
+        if (password.length !in 10..64) return "密码须为 10～64 位"
         if (!password.any { it.isDigit() }) return "密码必须包含数字"
         if (!password.any { it.isLowerCase() }) return "密码必须包含小写字母"
         if (!password.any { it.isUpperCase() }) return "密码必须包含大写字母"
+        if (!password.any { !it.isLetterOrDigit() }) return "密码必须包含特殊字符"
         return null
     }
 }

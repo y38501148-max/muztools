@@ -9,6 +9,7 @@ Environment=MUZTOOLS_DATA=/srv/muz-tool/data
 Environment=MUZTOOLS_RELAY_ONLY=0
 Environment=MUZTOOLS_HOST=127.0.0.1
 Environment=MUZTOOLS_PORT=18787
+Environment=MUZTOOLS_TRUST_PROXY_HEADERS=1
 EnvironmentFile=-/srv/muz-tool/data/muztool.env
 ExecStart=/srv/muz-tool/backend/.venv/bin/python -m muztool.main
 Restart=always

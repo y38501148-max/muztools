@@ -4,12 +4,17 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 from Crypto.Cipher import AES, PKCS1_v1_5
 from Crypto.Random import get_random_bytes
 from Crypto.PublicKey import RSA
 
 from muztool import api as api_module
 from muztool import config, invites, store
+from muztool.security import hash_password
+
+
+TEST_PASSWORD = "StrongPass1!"
 
 
 def encrypted_payload(client, fields, *, keep_login=False):
@@ -27,7 +32,7 @@ def encrypted_payload(client, fields, *, keep_login=False):
     }
 
 
-def login_payload(client, *, keep_login=True, username="persist_1", password="Secret1"):
+def login_payload(client, *, keep_login=True, username="persist_1", password=TEST_PASSWORD):
     return encrypted_payload(
         client,
         {"username": username, "password": password},
@@ -77,7 +82,7 @@ def client_and_user(tmp_path, monkeypatch):
     monkeypatch.setattr(api_module, "start_scheduler", lambda: None)
     config.ensure_dirs()
 
-    user = store.create_user("persist_1", "Secret1", "Persist")
+    user = store.create_user("persist_1", TEST_PASSWORD, "Persist")
     user["student"].update({"student_id": "12345678", "status": "verified"})
     user["approvals"] = {"signin": "none", "td": "none", "spark": "approved"}
     store.save_user(user)
@@ -104,6 +109,19 @@ def test_keep_login_cookie_restores_session(client_and_user):
     assert logout.status_code == 200
     assert client.cookies.get(api_module.SESSION_COOKIE) is None
 
+
+
+def test_existing_legacy_password_still_logs_in(client_and_user):
+    client, user = client_and_user
+    legacy_password = "OldPass1"
+    user["password_hash"] = hash_password(legacy_password)
+    store.save_user(user)
+
+    response = client.post(
+        "/api/auth/login",
+        json=login_payload(client, password=legacy_password),
+    )
+    assert response.status_code == 200
 
 
 def test_persistent_cookie_wins_when_browser_bearer_is_stale(client_and_user):
@@ -299,12 +317,33 @@ def test_live_notification_websocket_delivers_new_item(client_and_user):
         json=login_payload(client, keep_login=True),
     )
     token = login.json()["token"]
-    with client.websocket_connect(f"/api/notifications/ws?token={token}") as websocket:
+    with client.websocket_connect(
+        "/api/notifications/ws",
+        headers={"Authorization": f"Bearer {token}"},
+    ) as websocket:
         assert websocket.receive_json()["type"] == "ready"
         push_notification(user, "测试", "实时到达", "general", source_id="test-live")
         payload = websocket.receive_json()
         assert payload["type"] == "notification"
         assert payload["item"]["content"] == "实时到达"
+
+
+def test_websocket_rejects_query_string_token(client_and_user):
+    client, _user = client_and_user
+    token = client.post("/api/auth/login", json=login_payload(client)).json()["token"]
+    with pytest.raises(WebSocketDisconnect) as caught:
+        with client.websocket_connect(f"/api/notifications/ws?token={token}"):
+            pass
+    assert caught.value.code == 4401
+
+
+def test_websocket_accepts_bounded_first_message_auth(client_and_user):
+    client, _user = client_and_user
+    token = client.post("/api/auth/login", json=login_payload(client, keep_login=False)).json()["token"]
+    client.cookies.clear()
+    with client.websocket_connect("/api/notifications/ws") as websocket:
+        websocket.send_json({"type": "auth", "token": token})
+        assert websocket.receive_json()["type"] == "ready"
 
 
 def test_tibo_history_endpoint_reads_cache_only(client_and_user, monkeypatch):
@@ -368,6 +407,40 @@ def test_td_manual_runs_from_server_saved_photos(client_and_user, monkeypatch):
     saved = store.load_user(user["id"])
     assert saved["td"]["entrance_machine_id"] == 4
     assert saved["td"]["exit_machine_id"] == 5
+
+
+def test_security_surface_is_hardened(client_and_user):
+    client, _user = client_and_user
+    for path in ("/openapi.json", "/docs", "/redoc", "/api/not-a-real-route"):
+        response = client.get(path)
+        assert response.status_code == 404
+        assert response.text == "Not Found"
+        assert response.headers["content-type"].startswith("text/plain")
+
+    home = client.get("https://testserver/")
+    assert home.status_code == 200
+    csp = home.headers["content-security-policy"]
+    assert "default-src 'none'" in csp
+    assert "script-src 'self' 'nonce-" in csp
+    nonce = csp.split("'nonce-", 1)[1].split("'", 1)[0]
+    assert f'<script nonce="{nonce}">' in home.text
+    assert "strict-transport-security" in home.headers
+    assert home.headers["cross-origin-opener-policy"] == "same-origin"
+
+
+def test_update_artifacts_require_authentication_on_main_service(client_and_user):
+    client, _user = client_and_user
+    assert client.get("/api/app/version").status_code == 401
+    assert client.get("/api/app/apk").status_code == 401
+
+
+def test_login_rate_limit_runs_before_decryption(client_and_user):
+    client, _user = client_and_user
+    for _ in range(30):
+        assert client.post("/api/auth/login", json={}).status_code == 400
+    limited = client.post("/api/auth/login", json={})
+    assert limited.status_code == 429
+    assert int(limited.headers["retry-after"]) > 0
 
 
 def test_relay_only_mode_exposes_only_update_endpoints(client_and_user, monkeypatch):
@@ -496,7 +569,7 @@ def test_invite_registration_is_single_use_and_not_stored_in_plaintext(client_an
         "/api/auth/register",
         json=encrypted_payload(
             client,
-            {"username": "new_user1", "password": "Secret1", "display_name": "New", "invite_code": ""},
+            {"username": "new_user1", "password": "StrongPass1!", "display_name": "New", "invite_code": ""},
         ),
     )
     assert missing.status_code == 400
@@ -505,7 +578,7 @@ def test_invite_registration_is_single_use_and_not_stored_in_plaintext(client_an
         "/api/auth/register",
         json=encrypted_payload(
             client,
-            {"username": "new_user1", "password": "Secret1", "display_name": "New", "invite_code": code},
+            {"username": "new_user1", "password": "StrongPass1!", "display_name": "New", "invite_code": code},
         ),
     )
     assert registered.status_code == 200
@@ -517,7 +590,7 @@ def test_invite_registration_is_single_use_and_not_stored_in_plaintext(client_an
         "/api/auth/register",
         json=encrypted_payload(
             client,
-            {"username": "new_user2", "password": "Secret1", "display_name": "New 2", "invite_code": code},
+            {"username": "new_user2", "password": "StrongPass1!", "display_name": "New 2", "invite_code": code},
         ),
     )
     assert reused.status_code == 400
@@ -533,11 +606,11 @@ def test_only_muzermat_can_issue_invites(client_and_user):
     assert ordinary_login.status_code == 200
     assert client.post("/api/invites/issue").status_code == 404
 
-    admin = store.create_user("muzermat", "Secret1", "Admin")
+    admin = store.create_user("muzermat", TEST_PASSWORD, "Admin")
     store.save_user(admin)
     admin_login = client.post(
         "/api/auth/login",
-        json=login_payload(client, username="muzermat", password="Secret1"),
+        json=login_payload(client, username="muzermat", password=TEST_PASSWORD),
     )
     assert admin_login.status_code == 200
     issued = client.post("/api/invites/issue")

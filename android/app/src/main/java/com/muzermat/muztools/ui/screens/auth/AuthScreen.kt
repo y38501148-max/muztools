@@ -173,7 +173,7 @@ fun AuthScreen(
                         }
                     ),
                     shape = RoundedCornerShape(12.dp),
-                    supportingText = { Text("6～18 位，须含数字、大写和小写字母") },
+                    supportingText = { Text("10～64 位，须含数字、大小写字母和特殊字符") },
                     modifier = Modifier.fillMaxWidth()
                 )
 

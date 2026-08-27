@@ -10,6 +10,7 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.logging.HttpLoggingInterceptor
 import java.io.File
 import java.io.IOException
@@ -44,9 +45,14 @@ class ApiClient(private val prefs: PreferencesManager) {
             val requestBuilder = original.newBuilder()
                 .header("Accept", "application/json")
 
-            prefs.token?.let {
-                if (it.isNotBlank()) {
-                    requestBuilder.header("Authorization", "Bearer $it")
+            prefs.token?.let { token ->
+                val server = prefs.serverUrl.toHttpUrlOrNull()
+                val sameOrigin = server != null &&
+                    original.url.scheme == server.scheme &&
+                    original.url.host == server.host &&
+                    original.url.port == server.port
+                if (token.isNotBlank() && sameOrigin) {
+                    requestBuilder.header("Authorization", "Bearer $token")
                 }
             }
             chain.proceed(requestBuilder.build())

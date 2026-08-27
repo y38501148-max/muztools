@@ -175,12 +175,14 @@ def validate_username(username: str) -> str:
 
 
 def validate_password(password: str) -> str:
-    if not 6 <= len(password or "") <= 18:
-        raise ValueError("密码须为 6～18 位")
+    if not 10 <= len(password or "") <= 64:
+        raise ValueError("密码须为 10～64 位")
     if not re.search(r"[0-9]", password):
         raise ValueError("密码必须包含数字")
     if not re.search(r"[a-z]", password):
         raise ValueError("密码必须包含小写字母")
     if not re.search(r"[A-Z]", password):
         raise ValueError("密码必须包含大写字母")
+    if not any(not character.isalnum() for character in password):
+        raise ValueError("密码必须包含特殊字符")
     return password

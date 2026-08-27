@@ -604,7 +604,7 @@
           <div class="input-group">
             <label for="auth-pass">密码</label>
             <div style="position: relative;">
-              <input type="password" id="auth-pass" autocomplete="current-password" placeholder="须含数字、大写和小写字母" style="padding-right: 42px;" />
+              <input type="password" id="auth-pass" autocomplete="current-password" placeholder="注册密码须为 10～64 位并含大小写、数字和特殊字符" style="padding-right: 42px;" />
               <button type="button" id="btn-toggle-pass" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; color: var(--muted); font-size: 16px; padding: 4px;">👁</button>
             </div>
           </div>
@@ -1096,6 +1096,10 @@
     $("auth-switch-link").textContent = isRegister ? "已有账号？去登录" : "没有账号？去注册";
     $("auth-switch-link").href = isRegister ? "#/login" : "#/register";
     $("auth-switch-link").dataset.nav = isRegister ? "login" : "register";
+    $("auth-pass").autocomplete = isRegister ? "new-password" : "current-password";
+    $("auth-pass").placeholder = isRegister
+      ? "10～64 位，含大小写、数字和特殊字符"
+      : "请输入密码";
     if (!isRegister) loadAuthPreferences();
   }
 
@@ -2400,6 +2404,12 @@
         const inviteCode = $("auth-invite") ? $("auth-invite").value.trim() : "";
 
         if (!username || !password) throw new Error("用户名和密码不能为空");
+        if (isReg) {
+          if (password.length < 10 || password.length > 64) throw new Error("密码须为 10～64 位");
+          if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^\p{L}\p{N}]/u.test(password)) {
+            throw new Error("密码必须包含大写字母、小写字母、数字和特殊字符");
+          }
+        }
         if (isReg && !inviteCode) throw new Error("请输入邀请码");
 
         const rememberPassword = false;
@@ -2981,8 +2991,11 @@
     if (!state.token || state.liveSocket?.readyState === WebSocket.OPEN || state.liveSocket?.readyState === WebSocket.CONNECTING) return;
     clearTimeout(state.liveReconnectTimer);
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(`${protocol}//${location.host}/api/notifications/ws?token=${encodeURIComponent(state.token)}`);
+    const socket = new WebSocket(`${protocol}//${location.host}/api/notifications/ws`);
     state.liveSocket = socket;
+    socket.onopen = () => {
+      socket.send(JSON.stringify({type: "auth", token: state.token}));
+    };
     socket.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);

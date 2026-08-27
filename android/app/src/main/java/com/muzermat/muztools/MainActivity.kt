@@ -142,7 +142,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             MuzToolsTheme {
                 val authState by authViewModel.uiState.collectAsState()
-                LaunchedEffect(Unit) { updateViewModel.check() }
+                LaunchedEffect(authState.isLoggedIn) {
+                    if (authState.isLoggedIn) updateViewModel.check()
+                }
                 LaunchedEffect(authState.isLoggedIn) {
                     if (authState.isLoggedIn) {
                         MuzNotificationService.start(this@MainActivity)

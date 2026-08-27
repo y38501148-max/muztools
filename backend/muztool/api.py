@@ -4,12 +4,16 @@ from pathlib import Path
 from typing import Any
 
 import asyncio
+import ipaddress
+import json
+import secrets
 import threading
 import time
 
 from fastapi import Body, Cookie, Depends, FastAPI, File, Header, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .fcm import register_token as register_fcm_token, unregister_token as unregister_fcm_token
 from .config import CORS_ORIGINS, ensure_dirs
@@ -65,7 +69,15 @@ from .store import (
     user_from_token,
 )
 
-app = FastAPI(title="muztools", version="0.1.0")
+WEB_DIR = Path(__file__).resolve().parent / "web"
+
+app = FastAPI(
+    title="muztools",
+    version="0.1.0",
+    openapi_url=None,
+    docs_url=None,
+    redoc_url=None,
+)
 if CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -76,33 +88,83 @@ if CORS_ORIGINS:
     )
 
 
-@app.middleware("http")
-async def security_headers(request: Request, call_next):
-    if config.RELAY_ONLY and request.url.path not in {"/api/health", "/api/app/version", "/api/app/apk"}:
-        return Response("Not Found", status_code=404, media_type="text/plain")
-    content_length = request.headers.get("content-length")
-    if request.url.path in {"/api/auth/login", "/api/auth/register", "/api/student/bind", "/api/douyin/session"} and content_length:
+def _trusted_proxy_peer(request: Request) -> bool:
+    if not config.TRUST_PROXY_HEADERS or not request.client:
+        return False
+    try:
+        return ipaddress.ip_address(request.client.host).is_loopback
+    except ValueError:
+        return False
+
+
+def _client_ip(request: Request) -> str:
+    if _trusted_proxy_peer(request):
+        forwarded = request.headers.get("cf-connecting-ip", "").strip()
+        if not forwarded:
+            forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
         try:
-            limit = 512 * 1024 if request.url.path == "/api/douyin/session" else 64 * 1024
-            if int(content_length) > limit:
-                return Response("请求体过大", status_code=413, media_type="text/plain")
+            return str(ipaddress.ip_address(forwarded))
         except ValueError:
-            return Response("请求体无效", status_code=400, media_type="text/plain")
-    response = await call_next(request)
+            pass
+    return request.client.host if request.client else "unknown"
+
+
+def _request_is_secure(request: Request) -> bool:
+    if request.url.scheme == "https":
+        return True
+    if not _trusted_proxy_peer(request):
+        return False
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip().lower()
+    return forwarded == "https"
+
+
+def _apply_security_headers(request: Request, response: Response) -> Response:
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("X-Permitted-Cross-Domain-Policies", "none")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    )
+    if request.url.path.startswith("/api/") and request.url.path != "/api/app/apk":
+        response.headers.setdefault("Cache-Control", "no-store")
+        response.headers.setdefault("Pragma", "no-cache")
+    if _request_is_secure(request):
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
+
+
+@app.exception_handler(StarletteHTTPException)
+async def sanitized_http_exception(_request: Request, exc: StarletteHTTPException) -> Response:
+    if exc.status_code == 404 and exc.detail == "Not Found":
+        return Response("Not Found", status_code=404, media_type="text/plain", headers=exc.headers)
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response: Response | None = None
+    if config.RELAY_ONLY and request.url.path not in {"/api/health", "/api/app/version", "/api/app/apk"}:
+        response = Response("Not Found", status_code=404, media_type="text/plain")
+    content_length = request.headers.get("content-length")
+    if response is None and request.url.path in {"/api/auth/login", "/api/auth/register", "/api/student/bind", "/api/douyin/session"} and content_length:
+        try:
+            limit = 512 * 1024 if request.url.path == "/api/douyin/session" else 64 * 1024
+            if int(content_length) > limit:
+                response = Response("请求体过大", status_code=413, media_type="text/plain")
+        except ValueError:
+            response = Response("请求体无效", status_code=400, media_type="text/plain")
+    if response is None:
+        response = await call_next(request)
+    return _apply_security_headers(request, response)
 
 
 SESSION_COOKIE = "muz_session"
 SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
-
-
-def _request_is_secure(request: Request) -> bool:
-    forwarded = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip().lower()
-    return request.url.scheme == "https" or forwarded == "https"
 
 
 def _set_session_cookie(response: Response, token: str, keep_login: bool, *, secure: bool = False) -> None:
@@ -141,6 +203,15 @@ def current_user(
         raise HTTPException(status_code=401, detail="未登录或登录已失效")
     user["_token"] = token
     return user
+
+
+def current_user_or_relay(
+    authorization: str | None = Header(default=None),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    if config.RELAY_ONLY:
+        return {}
+    return current_user(authorization, session_cookie)
 
 
 def require_student(user: dict[str, Any], approved: bool = False) -> dict[str, Any]:
@@ -285,21 +356,43 @@ _AUTH_RATE_LOCK = threading.Lock()
 _AUTH_RATE: dict[str, list[float]] = {}
 
 
-def _rate_limit(request: Request, scope: str, identity: str, limit: int, window_seconds: int) -> None:
-    host = request.client.host if request.client else "unknown"
-    key = f"{scope}:{host}:{identity.casefold()}"
+def _rate_limit(
+    request: Request,
+    scope: str,
+    identity: str,
+    limit: int,
+    window_seconds: int,
+    *,
+    include_ip: bool = True,
+    consume: bool = True,
+) -> None:
+    subject = str(identity or "unknown").casefold()[:256]
+    key = f"{scope}:{_client_ip(request) if include_ip else '*'}:{subject}"
     now = time.monotonic()
     with _AUTH_RATE_LOCK:
         attempts = [stamp for stamp in _AUTH_RATE.get(key, []) if now - stamp < window_seconds]
         if len(attempts) >= limit:
-            raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
-        attempts.append(now)
-        _AUTH_RATE[key] = attempts
+            retry_after = max(1, int(window_seconds - (now - attempts[0])))
+            raise HTTPException(
+                status_code=429,
+                detail="请求过于频繁，请稍后再试",
+                headers={"Retry-After": str(retry_after)},
+            )
+        if consume:
+            attempts.append(now)
+            _AUTH_RATE[key] = attempts
         if len(_AUTH_RATE) > 10000:
             stale_before = now - 3600
             for stale_key in list(_AUTH_RATE):
                 if not _AUTH_RATE[stale_key] or _AUTH_RATE[stale_key][-1] < stale_before:
                     _AUTH_RATE.pop(stale_key, None)
+
+
+def _clear_rate_limit(request: Request, scope: str, identity: str, *, include_ip: bool = True) -> None:
+    subject = str(identity or "unknown").casefold()[:256]
+    key = f"{scope}:{_client_ip(request) if include_ip else '*'}:{subject}"
+    with _AUTH_RATE_LOCK:
+        _AUTH_RATE.pop(key, None)
 
 
 def _require_invite_admin(user: dict[str, Any]) -> None:
@@ -323,14 +416,12 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/api/app/version")
-async def app_version() -> dict[str, Any]:
+async def app_version(_user: dict[str, Any] = Depends(current_user_or_relay)) -> dict[str, Any]:
     return appver.public_version()
 
 
 @app.get("/api/app/apk")
-async def app_apk():
-    from fastapi.responses import FileResponse
-
+async def app_apk(_user: dict[str, Any] = Depends(current_user_or_relay)):
     path = appver.apk_path()
     if not path.exists():
         raise HTTPException(status_code=404, detail="尚未上传安装包")
@@ -339,12 +430,14 @@ async def app_apk():
 
 
 @app.get("/api/security/public-key")
-async def security_public_key() -> dict[str, Any]:
+async def security_public_key(request: Request) -> dict[str, Any]:
+    _rate_limit(request, "public-key", "*", 120, 60)
     return public_transport_key()
 
 
 @app.post("/api/auth/register")
 async def register(request: Request, response: Response, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    _rate_limit(request, "register-ip", "*", 10, 3600)
     try:
         fields = decrypt_transport_payload(payload, ("username", "password", "display_name", "invite_code"))
         username = validate_username(fields["username"])
@@ -355,8 +448,7 @@ async def register(request: Request, response: Response, payload: dict[str, Any]
         invite_code = fields["invite_code"].strip()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    _rate_limit(request, "register-ip", "*", 20, 3600)
-    _rate_limit(request, "register", username, 8, 3600)
+    _rate_limit(request, "register-account", username, 5, 3600, include_ip=False)
     if find_user_by_username(username):
         raise HTTPException(status_code=400, detail="账号无法注册，请检查信息后重试")
     invite_id = ""
@@ -381,17 +473,31 @@ async def register(request: Request, response: Response, payload: dict[str, Any]
 
 @app.post("/api/auth/login")
 async def login(request: Request, response: Response, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    # Charge the source-IP budget before expensive RSA decryption so malformed
+    # envelopes cannot bypass throttling or cheaply exhaust server CPU.
+    _rate_limit(request, "login-ip", "*", 30, 600)
     try:
         fields = decrypt_transport_payload(payload, ("username", "password"))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     username = fields["username"].strip()
-    _rate_limit(request, "login-ip", "*", 120, 600)
-    _rate_limit(request, "login", username or "unknown", 30, 600)
+    if len(username) > 128:
+        raise HTTPException(status_code=400, detail="用户名或密码错误")
+    _rate_limit(
+        request,
+        "login-account",
+        username or "unknown",
+        10,
+        900,
+        include_ip=False,
+        consume=False,
+    )
     try:
         user = authenticate(username, fields["password"])
     except ValueError as exc:
+        _rate_limit(request, "login-account", username or "unknown", 10, 900, include_ip=False)
         raise HTTPException(status_code=400, detail="用户名或密码错误") from exc
+    _clear_rate_limit(request, "login-account", username or "unknown", include_ip=False)
     token = create_session(user["id"])
     _set_session_cookie(response, token, bool(payload.get("keep_login", False)), secure=_request_is_secure(request))
     return {"token": token, "user": public_user(user)}
@@ -464,18 +570,66 @@ async def notifications(user: dict[str, Any] = Depends(current_user)) -> list[di
     return items
 
 
+def _websocket_origin_allowed(websocket: WebSocket) -> bool:
+    origin = str(websocket.headers.get("origin") or "").rstrip("/")
+    if not origin:
+        # Native Android clients do not send a browser Origin header.
+        return True
+    host = str(websocket.headers.get("host") or "").strip()
+    allowed = {item.rstrip("/") for item in CORS_ORIGINS}
+    allowed.update({f"https://{host}", f"http://{host}"})
+    return origin in allowed
+
+
+def _websocket_header_user(websocket: WebSocket) -> dict[str, Any] | None:
+    authorization = str(websocket.headers.get("authorization") or "")
+    token = ""
+    if authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+    user = user_from_token(token) if token else None
+    if user:
+        return user
+    cookie_token = str(websocket.cookies.get(SESSION_COOKIE) or "").strip()
+    return user_from_token(cookie_token) if cookie_token else None
+
+
 @app.websocket("/api/notifications/ws")
-async def notifications_websocket(websocket: WebSocket, token: str = Query(default="")) -> None:
+async def notifications_websocket(websocket: WebSocket) -> None:
     if config.RELAY_ONLY:
         await websocket.close(code=4404)
         return
-    user = user_from_token(str(token or "").strip())
+    if not _websocket_origin_allowed(websocket):
+        await websocket.close(code=4403)
+        return
+
+    # Never accept session credentials in the URL. Native clients authenticate
+    # with an Authorization header; browsers use their HttpOnly session cookie
+    # or a bounded first WebSocket message when the login is session-only.
+    if websocket.query_params.get("token"):
+        await websocket.close(code=4401)
+        return
+    user = _websocket_header_user(websocket)
+    await websocket.accept()
+    if not user:
+        try:
+            raw = await asyncio.wait_for(websocket.receive_text(), timeout=5)
+            if len(raw) > 512:
+                raise ValueError("authentication message too large")
+            payload = json.loads(raw)
+            if not isinstance(payload, dict) or payload.get("type") != "auth":
+                raise ValueError("invalid authentication message")
+            token = str(payload.get("token") or "").strip()
+            if len(token) > 256:
+                raise ValueError("invalid authentication token")
+            user = user_from_token(token)
+        except (asyncio.TimeoutError, json.JSONDecodeError, ValueError, WebSocketDisconnect):
+            user = None
     if not user:
         await websocket.close(code=4401)
         return
+
     user_id = str(user.get("id") or "")
     queue = subscribe_live_notifications(user_id)
-    await websocket.accept()
     try:
         await websocket.send_json({"type": "ready"})
         while True:
@@ -1148,20 +1302,38 @@ async def douyin_run_target(
 
 
 
-WEB_DIR = Path(__file__).resolve().parent / "web"
+def _web_index_response() -> Response:
+    index = WEB_DIR / "index.html"
+    if not index.exists():
+        return JSONResponse({"name": "muztools"})
+    nonce = secrets.token_urlsafe(18)
+    html = index.read_text(encoding="utf-8")
+    marker = "<script>\n/**"
+    if marker not in html:
+        raise RuntimeError("WebUI inline script marker is missing")
+    html = html.replace(marker, f'<script nonce="{nonce}">\n/**', 1)
+    csp = (
+        "default-src 'none'; "
+        f"script-src 'self' 'nonce-{nonce}'; "
+        "style-src 'unsafe-inline'; img-src 'self' data: https:; "
+        "connect-src 'self'; font-src 'self'; object-src 'none'; "
+        "base-uri 'none'; frame-ancestors 'none'; form-action 'self'; "
+        "worker-src 'none'; upgrade-insecure-requests"
+    )
+    return HTMLResponse(
+        html,
+        headers={"Cache-Control": "no-store", "Content-Security-Policy": csp},
+    )
 
 
 @app.get("/")
 async def web_root():
-    index = WEB_DIR / "index.html"
-    if not index.exists():
-        return {"name": "muztools"}
-    return FileResponse(index, headers={"Cache-Control": "no-store"})
+    return _web_index_response()
 
 
 @app.get("/index.html")
 async def web_index():
-    return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
+    return _web_index_response()
 
 
 @app.get("/assets/aes-gcm.min.js")

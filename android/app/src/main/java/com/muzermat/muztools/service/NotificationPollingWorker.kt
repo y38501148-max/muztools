@@ -175,9 +175,13 @@ class MuzNotificationService : Service() {
             base.startsWith("http://") -> "ws://${base.removePrefix("http://")}"
             else -> "ws://$base"
         }
-        val url = "$wsBase/api/notifications/ws?token=${Uri.encode(token)}"
+        val url = "$wsBase/api/notifications/ws"
         lastSocketActivityAt = SystemClock.elapsedRealtime()
-        socket = socketClient.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
+        val request = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer $token")
+            .build()
+        socket = socketClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 lastSocketActivityAt = SystemClock.elapsedRealtime()
                 scope.launch { syncUnreadNotifications() }

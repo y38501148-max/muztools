@@ -24,6 +24,9 @@ FCM_CREDENTIALS_FILE = os.environ.get("MUZTOOLS_FCM_CREDENTIALS", "").strip()
 FCM_PROJECT_ID = os.environ.get("MUZTOOLS_FCM_PROJECT_ID", "").strip()
 FCM_PROXY = os.environ.get("MUZTOOLS_FCM_PROXY", "").strip()
 RELAY_ONLY = os.environ.get("MUZTOOLS_RELAY_ONLY", "").strip().lower() in {"1", "true", "yes"}
+# Forwarded client/protocol headers are trusted only from a loopback peer and
+# only when explicitly enabled for a local reverse proxy or Cloudflare Tunnel.
+TRUST_PROXY_HEADERS = os.environ.get("MUZTOOLS_TRUST_PROXY_HEADERS", "").strip().lower() in {"1", "true", "yes"}
 
 
 def ensure_dirs() -> None:
