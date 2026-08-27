@@ -183,7 +183,7 @@ fun HomeScreen(
                         )
                         StatCard(
                             title = "阳光体育",
-                            count = uiState.sunshineStatus.count,
+                            count = uiState.sunshineStatus.count.toDouble(),
                             target = uiState.sunshineStatus.targetCount,
                             unit = "次",
                             icon = Icons.Default.WbSunny,
@@ -299,10 +299,13 @@ fun HomeScreen(
     }
 }
 
+private fun formatExerciseCount(count: Double): String =
+    if (count % 1.0 == 0.0) count.toLong().toString() else count.toString()
+
 @Composable
 private fun StatCard(
     title: String,
-    count: Int,
+    count: Double,
     target: Int,
     unit: String,
     icon: ImageVector,
@@ -353,7 +356,7 @@ private fun StatCard(
             Spacer(modifier = Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
-                    text = "$count",
+                    text = formatExerciseCount(count),
                     style = MaterialTheme.typography.headlineMedium.copy(
                         fontWeight = FontWeight.Bold,
                         fontSize = 26.sp

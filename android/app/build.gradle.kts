@@ -13,8 +13,8 @@ android {
         applicationId = "com.muzermat.muztools"
         minSdk = 26
         targetSdk = 36
-        versionCode = 31
-        versionName = "1.4.4"
+        versionCode = 32
+        versionName = "1.4.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

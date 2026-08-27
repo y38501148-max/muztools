@@ -5,6 +5,7 @@ import re
 import socket
 import struct
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from typing import Any
 
 import httpx
@@ -22,6 +23,22 @@ SCORE_RE = re.compile(
     r"<td>\s*(\d{4})\s*-\s*(\d{4})\s*</td>\s*<td>\s*(\d+)\s*</td>\s*<td>\s*(\d+)\s*</td>\s*<td>\s*-\s*</td>",
     re.S,
 )
+TERM_RE = re.compile(r"^(\d{4})\s*[-–—~至]\s*(\d{4})$")
+CURRENT_TERM_RE = re.compile(
+    r"function\s+getStuEventDetail\s*\([^)]*\)\s*\{"
+    r"[\s\S]{0,1000}?\bvar\s+xn\s*=\s*['\"](\d{4})\s*[-–—~至]\s*(\d{4})['\"]"
+    r"[\s\S]{0,300}?\bvar\s+xq\s*=\s*['\"]([12])['\"]",
+    re.I,
+)
+NUMBER_RE = re.compile(r"^\d+(?:\.\d+)?")
+TD_SCORE_COLUMNS = {
+    "td_old_count": "TD旧",
+    "app_count": "App锻炼",
+    "machine_count": "TD考勤机",
+    "activity_count": "活动转换",
+    "running_count": "奔跑在北航",
+    "count": "TD合计",
+}
 WINDOWS = [(7 * 60 + 30, 10 * 60), (11 * 60 + 30, 14 * 60), (15 * 60 + 30, 20 * 60)]
 
 MACHINES = {
@@ -150,25 +167,174 @@ def _check_and_upload(student_id: str, machine_id: int, photo: bytes, timestamp_
     }
 
 
+def _normalized_cell(value: str) -> str:
+    return "".join(value.split())
+
+
+class _TableParser(HTMLParser):
+    """Collect top-level HTML table rows without depending on page styling."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.tables: list[list[list[str]]] = []
+        self._table_depth = 0
+        self._table: list[list[str]] | None = None
+        self._row: list[str] | None = None
+        self._cell_parts: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        if tag == "table":
+            if self._table_depth == 0:
+                self._table = []
+            self._table_depth += 1
+        elif tag == "tr" and self._table_depth == 1:
+            self._row = []
+        elif tag in {"td", "th"} and self._table_depth == 1 and self._row is not None:
+            self._cell_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._cell_parts is not None:
+            self._cell_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"td", "th"} and self._table_depth == 1 and self._cell_parts is not None:
+            if self._row is not None:
+                self._row.append(" ".join("".join(self._cell_parts).split()))
+            self._cell_parts = None
+        elif tag == "tr" and self._table_depth == 1 and self._row is not None:
+            if self._table is not None and self._row:
+                self._table.append(self._row)
+            self._row = None
+        elif tag == "table" and self._table_depth:
+            self._table_depth -= 1
+            if self._table_depth == 0:
+                if self._table:
+                    self.tables.append(self._table)
+                self._table = None
+
+
+def _numeric_cell(value: str) -> int | float:
+    text = _normalized_cell(value).replace(",", "")
+    match = NUMBER_RE.match(text)
+    if not match:
+        # New Health Cloud rows render an empty source as only “（查看明细）”.
+        if not text or "查看明细" in text:
+            return 0
+        raise ValueError("健康云返回了无法识别的 TD 次数")
+    number = float(match.group(0))
+    return int(number) if number.is_integer() else number
+
+
+def _new_score_rows(page_html: str) -> list[dict[str, Any]]:
+    parser = _TableParser()
+    parser.feed(page_html)
+    rows: list[dict[str, Any]] = []
+
+    for table in parser.tables:
+        for header_index, header in enumerate(table):
+            normalized_header = [_normalized_cell(cell) for cell in header]
+            column_indexes: dict[str, int] = {}
+            for field, label in TD_SCORE_COLUMNS.items():
+                index = next(
+                    (i for i, cell in enumerate(normalized_header) if cell.casefold().startswith(label.casefold())),
+                    None,
+                )
+                if index is not None:
+                    column_indexes[field] = index
+            if "count" not in column_indexes:
+                continue
+
+            year_index = next((i for i, cell in enumerate(normalized_header) if cell == "学年"), None)
+            term_index = next((i for i, cell in enumerate(normalized_header) if cell == "学期"), None)
+            if year_index is None or term_index is None:
+                continue
+
+            required_index = max(year_index, term_index, *column_indexes.values())
+            for row in table[header_index + 1 :]:
+                if len(row) <= required_index:
+                    continue
+                term_match = TERM_RE.fullmatch(_normalized_cell(row[year_index]))
+                if not term_match:
+                    continue
+                term_text = _normalized_cell(row[term_index])
+                if not term_text.isdigit():
+                    continue
+                item: dict[str, Any] = {
+                    "term_start": int(term_match.group(1)),
+                    "term_end": int(term_match.group(2)),
+                    "term_no": int(term_text),
+                }
+                for field, index in column_indexes.items():
+                    item[field] = _numeric_cell(row[index])
+                rows.append(item)
+            break
+    return rows
+
+
+def _current_score_term(page_html: str) -> tuple[int, int, int] | None:
+    """Read the term selected by Health Cloud, including an empty new term.
+
+    Health Cloud omits the aggregate row until a term has valid records, but
+    its detail-dialog script still publishes the current academic year and
+    semester. That value is the authoritative latest term for the status API.
+    """
+    match = CURRENT_TERM_RE.search(page_html)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def _empty_term_row(term: tuple[int, int, int]) -> dict[str, Any]:
+    start, end, number = term
+    return {
+        "term_start": start,
+        "term_end": end,
+        "term_no": number,
+        "td_old_count": 0,
+        "app_count": 0,
+        "machine_count": 0,
+        "activity_count": 0,
+        "running_count": 0,
+        "count": 0,
+        "has_records": False,
+    }
+
+
+def parse_td_score_rows(page_html: str) -> list[dict[str, Any]]:
+    rows = _new_score_rows(page_html)
+    if not rows:
+        rows = [
+            {
+                "term_start": int(match.group(1)),
+                "term_end": int(match.group(2)),
+                "term_no": int(match.group(3)),
+                "count": int(match.group(4)),
+            }
+            for match in SCORE_RE.finditer(page_html)
+        ]
+
+    current_term = _current_score_term(page_html)
+    row_terms = {(row["term_start"], row["term_end"], row["term_no"]) for row in rows}
+    if current_term and current_term not in row_terms:
+        rows.append(_empty_term_row(current_term))
+
+    rows.sort(key=lambda item: (item["term_start"], item["term_end"], item["term_no"]), reverse=True)
+    return rows
+
+
 async def query_td_counts(student_id: str, password: str) -> list[dict[str, Any]]:
     async with httpx.AsyncClient(verify=False, follow_redirects=True, headers={"User-Agent": UA}, timeout=20) as client:
         await sso_login(client, student_id, password, use_vpn=False)
+        # This request establishes the Health Cloud school and user context.
+        # Going straight to stu_sun_score can silently render another module.
         index = await client.get(TD_INDEX_URL)
         index.raise_for_status()
         page = await client.get(TD_SCORE_URL)
         page.raise_for_status()
-    rows = [
-        {
-            "term_start": int(match.group(1)),
-            "term_end": int(match.group(2)),
-            "term_no": int(match.group(3)),
-            "count": int(match.group(4)),
-        }
-        for match in SCORE_RE.finditer(page.text)
-    ]
+    rows = parse_td_score_rows(page.text)
     if not rows:
-        raise ValueError("健康云锻炼次数页面已改版，TD 次数查询暂不可用；手动打卡不受影响")
-    rows.sort(key=lambda item: (item["term_start"], item["term_end"], item["term_no"]), reverse=True)
+        raise ValueError("健康云未返回可识别的 TD 次数统计，请稍后重试；手动打卡不受影响")
     return rows
 
 

@@ -22,6 +22,9 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.muzermat.muztools.ui.components.SectionHeader
 
+private fun formatTdCount(count: Double): String =
+    if (count % 1.0 == 0.0) count.toLong().toString() else count.toString()
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TdScreen(
@@ -104,7 +107,7 @@ fun TdScreen(
                             .padding(20.dp)
                     ) {
                         Text(
-                            text = "本学期打卡进度",
+                            text = "${uiState.tdStatus.latest?.label() ?: "本学期"}打卡进度",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -122,7 +125,7 @@ fun TdScreen(
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Row(verticalAlignment = Alignment.Bottom) {
                                     Text(
-                                        text = "${uiState.tdStatus.semesterCount}",
+                                        text = formatTdCount(uiState.tdStatus.semesterCount),
                                         style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
@@ -163,6 +166,15 @@ fun TdScreen(
                                     )
                                 }
                             }
+                        }
+                        if (uiState.tdStatus.latest?.hasRecords == false) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "${uiState.tdStatus.latest?.label() ?: "本学期"}暂无有效 TD 记录",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }

@@ -127,9 +127,25 @@ data class AutoSigninToggleRequest(
 )
 
 @Serializable
+data class TdTermSummary(
+    @SerialName("term_start") val termStart: Int = 0,
+    @SerialName("term_end") val termEnd: Int = 0,
+    @SerialName("term_no") val termNo: Int = 0,
+    val count: Double = 0.0,
+    @SerialName("has_records") val hasRecords: Boolean = true
+) {
+    fun label(): String = if (termStart > 0 && termEnd > 0 && termNo > 0) {
+        "$termStart-$termEnd 学年第 $termNo 学期"
+    } else {
+        "本学期"
+    }
+}
+
+@Serializable
 data class TdStatusResponse(
-    @SerialName("semester_count") val semesterCount: Int = 0,
+    @SerialName("semester_count") val semesterCount: Double = 0.0,
     @SerialName("target_count") val targetCount: Int = 32,
+    val latest: TdTermSummary? = null,
     @SerialName("last_run_time") val lastRunTime: String? = null,
     val status: String? = null
 )

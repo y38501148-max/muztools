@@ -318,6 +318,7 @@ async def load_td(user: dict[str, Any]) -> dict[str, Any]:
     student = require_feature(user, "td")
     rows = await td.query_td_counts(student["student_id"], get_student_password(student))
     latest = td.latest_count(rows)
+    latest_term = f"{latest['term_start']}-{latest['term_end']} 学年第 {latest['term_no']} 学期"
     photos = photo_dir(user["id"])
     campus = user.get("td", {}).get("campus", "xueyuanlu")
     return {
@@ -331,6 +332,7 @@ async def load_td(user: dict[str, Any]) -> dict[str, Any]:
         "semester_count": latest.get("count", 0),
         "target_count": 32,
         "status": "ok",
+        "message": f"{latest_term}暂无有效 TD 记录" if latest.get("has_records") is False else "",
     }
 
 

@@ -1,6 +1,6 @@
 # MuzTool（盐的工具箱）
 
-MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的个人工具箱。当前版本为 **v1.4.4**。
+MuzTool 是一个“FastAPI 服务端 + 单页 WebUI + Android 客户端”的个人工具箱。当前版本为 **v1.4.5**。
 
 ## 当前主要能力
 
@@ -85,20 +85,20 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-v1.3.9 使用：
+v1.4.5 使用：
 
-- `versionName = "1.3.9"`
-- `versionCode = 26`
+- `versionName = "1.4.5"`
+- `versionCode = 32`
 
 ## 热更新发布
 
 ```bash
 muz-admin version
-muz-admin set-version 1.3.9 \
-  --code 26 \
-  --title "MuzTool v1.3.9" \
-  --message "将最近通知和续火花好友名单改为固定高度可滚动列表" \
-  --apk /path/to/muztools-1.3.9.apk
+muz-admin set-version 1.4.5 \
+  --code 32 \
+  --title "MuzTool 1.4.5" \
+  --message "恢复新版健康云 TD 查询，并始终显示健康云最新学期" \
+  --apk /path/to/muztools-1.4.5.apk
 ```
 
 完整开发、测试、部署和双端同步要求见 `AGENTS.md`；管理命令说明见 `MUZ-ADMIN.md`。

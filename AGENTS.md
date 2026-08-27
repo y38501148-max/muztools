@@ -141,7 +141,7 @@ muz-tool/
 
 ### TD 查询与阳光打卡
 
-- 2026-08 起 BUAA 健康云（`MUZTOOLS_TD_HOST`）网页改版，学生侧已无锻炼次数页面，`query_td_counts` 报“页面已改版”属预期，不得为兼容旧页面而恢复旧解析；TCP 手动打卡（8888 端口）协议未变。
+- 2026-08 起 BUAA 健康云（`MUZTOOLS_TD_HOST`）学生锻炼页改为 `stu_sun_score` 汇总表，按表头提供 TD旧(800)、App锻炼(801)、TD考勤机(802)、活动转换(803)、奔跑在北航(804) 和 TD合计(888)；次数查询必须先访问带 `schoolno=10006` 的入口建立上下文，再按表头解析 TD合计，不得依赖旧固定 `<td>` 顺序。页面会省略尚无有效记录的最新学期汇总行，此时以 `getStuEventDetail` 脚本中的 `xn/xq` 为最新学期并返回 0 次，不得错误回退到上一学期。TCP 手动打卡（8888 端口）协议未变。
 - ygdk（阳光打卡）API 响应已改为 `{code, result, msg}` 格式：`code==1` 成功（登录接口在 `result.data`），`code==-98` 登录失效，其余报 `msg`；`_unwrap` 同时兼容旧 `{e, d}` 格式。
 - iClass 课表接口对当天无课返回 `{"STATUS":"2"}` 且无 ERRMSG，`parse_schedule_payload` 将其视为空课表而非错误。
 

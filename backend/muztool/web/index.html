@@ -1491,6 +1491,10 @@
     }
 
     const studentId = state.student?.student_id || "";
+    const latestTd = tdData.latest || {};
+    const latestTdTerm = latestTd.term_start && latestTd.term_end && latestTd.term_no
+      ? `${latestTd.term_start}-${latestTd.term_end} 学年第 ${latestTd.term_no} 学期`
+      : "";
 
     return `
       ${renderPageBackHeader("TD / 阳光体育")}
@@ -1500,7 +1504,7 @@
         <div class="card">
           <span class="badge" style="background: var(--td-soft); color: var(--td);">TD 锻炼</span>
           <h2 style="font-size: 26px; margin: 8px 0 2px;">${tdData.semester_count ?? "-"} <span style="font-size: 14px; font-weight: normal; color: var(--muted);">/ ${tdData.target_count ?? 32}</span></h2>
-          <p class="muted-sm">${esc(tdData.message || (tdData.latest ? `最近打卡: ${tdData.latest.date || ""}` : "本学期打卡进度"))}</p>
+          <p class="muted-sm">${esc(tdData.message || (latestTdTerm ? `${latestTdTerm}统计` : "本学期打卡进度"))}</p>
         </div>
         <div class="card">
           <span class="badge" style="background: var(--primary-soft); color: var(--primary);">阳光体育</span>
