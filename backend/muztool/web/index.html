@@ -1981,9 +1981,9 @@
         </summary>
         <div style="margin-top: 16px;">
           ${[
-            ["1", "下载 macOS 抓取工具", `点击下方按钮下载 ZIP，解压后右键打开 <code>MuzTool-Checkin-Token-macOS.command</code>。首次运行会检测并安装官方 mitmproxy，并可能要求信任本机 HTTPS 证书。`],
+            ["1", "选择电脑系统并下载抓取工具", `根据电脑系统点击下方 macOS 或 Windows 按钮下载 ZIP。macOS 解压后右键打开 <code>MuzTool-Checkin-Token-macOS.command</code>；Windows 解压后右键运行 <code>MuzTool-Checkin-Token-Windows.ps1</code>（或在 PowerShell 执行 <code>powershell -ExecutionPolicy Bypass -File .\\MuzTool-Checkin-Token-Windows.ps1</code>）。首次运行会检测并安装官方 mitmproxy，并可能要求信任本机 HTTPS 证书。`],
             ["2", "登录电脑微信并打开小程序", `脚本显示“抓取已启动”后，登录电脑微信，打开“${esc(selectedProvider.name || providerId)}”小程序，并执行一次活动查询或重新登录。`],
-            ["3", "结束抓包并复制 Token", "回到脚本窗口按回车。工具会自动恢复原系统代理、输出最新 32 位 Token，并复制到 macOS 剪贴板。"],
+            ["3", "结束抓包并复制 Token", "回到脚本窗口按回车。工具会自动恢复原系统代理、输出最新 32 位 Token，并复制到当前电脑剪贴板。"],
             ["4", "导入并签到", "回到此页点击“从剪贴板粘贴”，保存并验证 Token；然后输入 AS 开头的活动码，核对活动并填写姓名、学号等必填项后执行签到。"]
           ].map(step => `
             <div class="row" style="align-items: flex-start; margin-bottom: 13px;">
@@ -1991,10 +1991,11 @@
               <div style="flex: 1;"><b>${step[1]}</b><p class="muted-sm" style="margin-top: 3px;">${step[2]}</p></div>
             </div>
           `).join("")}
-          <div style="margin: 4px 0 14px;">
-            <a class="btn soft wide" href="/downloads/muz-checkin-token-macos.zip" download="MuzTool-Checkin-Token-macOS.zip">⬇️ 下载 macOS Token 抓取工具</a>
-            <p class="muted-sm" style="margin-top: 7px;">仅支持 macOS。下载后解压，右键打开脚本；若被 Gatekeeper 拦截，请在“系统设置 → 隐私与安全性”中选择仍要打开。</p>
+          <div class="row" style="gap: 8px; margin: 4px 0 14px; flex-wrap: wrap;">
+            <a class="btn soft" style="flex: 1; min-width: 220px;" href="/downloads/muz-checkin-token-macos.zip" download="MuzTool-Checkin-Token-macOS.zip">⬇️ 下载 macOS Token 抓取工具</a>
+            <a class="btn soft" style="flex: 1; min-width: 220px;" href="/downloads/muz-checkin-token-windows.zip" download="MuzTool-Checkin-Token-Windows.zip">⬇️ 下载 Windows Token 抓取工具</a>
           </div>
+          <p class="muted-sm" style="margin-top: -6px; margin-bottom: 14px;">macOS 脚本需右键打开；Windows 脚本需使用 PowerShell 运行，首次运行会通过 winget 安装 mitmproxy。若 Windows 阻止脚本，请在 PowerShell 中使用上方命令临时运行。</p>
           <div style="border-top: 1px solid var(--line); padding-top: 12px;" class="muted-sm">
             🔒 WebUI 本身无法越权读取微信 Token。下载工具仅在你主动运行期间分析 <code>qiandaoerweima.yuleji.top</code>，结束时恢复原代理；原始抓包仍含登录凭据，用完后请删除，也不要把 Token 发送给他人。
           </div>

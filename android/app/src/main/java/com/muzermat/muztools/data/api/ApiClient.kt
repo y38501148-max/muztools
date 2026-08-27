@@ -65,6 +65,15 @@ class ApiClient(private val prefs: PreferencesManager) {
         return "$base$endpoint"
     }
 
+    fun checkinTokenDownloadUrl(platform: String): String {
+        val path = when (platform.lowercase()) {
+            "macos" -> "/downloads/muz-checkin-token-macos.zip"
+            "windows" -> "/downloads/muz-checkin-token-windows.zip"
+            else -> throw IllegalArgumentException("Unsupported check-in token tool platform")
+        }
+        return getFullUrl(path)
+    }
+
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     private fun longClient(): OkHttpClient = okHttpClient.newBuilder()

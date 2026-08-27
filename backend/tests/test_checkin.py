@@ -303,6 +303,21 @@ def test_checkin_macos_tool_download():
         assert archive.read(info).startswith(b"#!/bin/bash")
 
 
+def test_checkin_windows_tool_download():
+    with TestClient(api_module.app) as client:
+        response = client.get("/downloads/muz-checkin-token-windows.zip")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+    assert "MuzTool-Checkin-Token-Windows.zip" in response.headers.get("content-disposition", "")
+    assert response.content.startswith(b"PK")
+    with ZipFile(BytesIO(response.content)) as archive:
+        info = archive.getinfo("MuzTool-Checkin-Token-Windows.ps1")
+        script = archive.read(info).decode("utf-8-sig")
+        assert "mitmproxy.mitmproxy" in script
+        assert "ProxyEnable" in script
+        assert "qiandaoerweima.yuleji.top" in script
+
+
 def test_checkin_unknown_provider_returns_404(client_and_user):
     client, _ = client_and_user
     assert client.get("/api/checkin/nonexistent/config").status_code == 404
@@ -324,6 +339,9 @@ def test_checkin_webui_wraps_token_in_encrypted_envelope():
     assert "const payload = {encrypted: await encryptedFields({token})};" in handler
     assert "body: payload" in handler
     assert "const payload = await encryptedFields({token});" not in handler
+    assert 'href="/downloads/muz-checkin-token-macos.zip"' in html
+    assert 'href="/downloads/muz-checkin-token-windows.zip"' in html
+    assert "MuzTool-Checkin-Token-Windows.ps1" in html
 
 
 def test_checkin_save_token_roundtrip(client_and_user, monkeypatch):

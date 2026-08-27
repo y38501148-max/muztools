@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -29,6 +30,7 @@ fun CheckinScreen(viewModel: CheckinViewModel) {
     val state by viewModel.uiState.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     val clipboard = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
     var tokenText by remember(state.selectedProviderId) { mutableStateOf("") }
     val selectedProvider = state.providers.firstOrNull { it.id == state.selectedProviderId }
 
@@ -75,7 +77,13 @@ fun CheckinScreen(viewModel: CheckinViewModel) {
                 }
                 if (state.error.isNotBlank()) item { ErrorCard(state.error) }
             } else {
-                item { UsageTutorialCard(provider = selectedProvider) }
+                item { UsageTutorialCard(
+                    provider = selectedProvider,
+                    onDownload = { platform ->
+                        runCatching { uriHandler.openUri(viewModel.checkinTokenDownloadUrl(platform)) }
+                            .onFailure { viewModel.showMessage("无法打开下载链接，请改用 WebUI 下载") }
+                    }
+                ) }
                 item {
                     ProviderTokenCard(
                         connected = state.config.connected,
@@ -237,7 +245,10 @@ private fun ProviderFeatureCard(provider: CheckinProvider, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun UsageTutorialCard(provider: CheckinProvider) {
+private fun UsageTutorialCard(
+    provider: CheckinProvider,
+    onDownload: (String) -> Unit
+) {
     var expanded by remember(provider.id) { mutableStateOf(true) }
     Card(shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(16.dp)) {
@@ -255,16 +266,27 @@ private fun UsageTutorialCard(provider: CheckinProvider) {
             }
             if (expanded) {
                 Spacer(Modifier.height(14.dp))
-                TutorialStep(1, "请使用电脑端获取 Token", "Android 端不支持抓取微信小程序流量。请在 Mac 电脑浏览器登录 MuzTool WebUI，进入“签到工具”并选择“${provider.name}”。")
-                TutorialStep(2, "下载 macOS 抓取工具", "在电脑端 WebUI 下载并解压 MuzTool Token 抓取工具，右键打开脚本；按提示登录电脑微信并打开对应小程序。")
-                TutorialStep(3, "结束抓包并复制 Token", "完成小程序操作后回到脚本窗口按回车。工具会自动恢复系统代理、输出最新 32 位 Token，并复制到 Mac 剪贴板。")
+                TutorialStep(1, "请使用电脑端获取 Token", "Android 端不支持抓取微信小程序流量。请在电脑端浏览器登录 MuzTool WebUI，进入“签到工具”并选择“${provider.name}”。")
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = { onDownload("macos") }, modifier = Modifier.weight(1f)) {
+                        Text("下载 macOS 脚本")
+                    }
+                    OutlinedButton(onClick = { onDownload("windows") }, modifier = Modifier.weight(1f)) {
+                        Text("下载 Windows 脚本")
+                    }
+                }
+                TutorialStep(2, "登录电脑微信并打开小程序", "运行对应脚本后，登录电脑微信，打开“${provider.name}”小程序，并执行一次活动查询或重新登录。")
+                TutorialStep(3, "结束抓包并复制 Token", "回到脚本窗口按回车。工具会自动恢复原系统代理、输出最新 32 位 Token，并复制到电脑剪贴板。")
                 TutorialStep(4, "回到 Android 导入并签到", "通过自己的通用剪贴板或可信方式把 Token 带到本机，点击下方“从剪贴板一键粘贴”并保存验证；然后查询活动、填写必填项并签到。")
                 HorizontalDivider(Modifier.padding(vertical = 10.dp))
                 Row(verticalAlignment = Alignment.Top) {
                     Icon(Icons.Default.Security, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Android 端无法直接抓取微信小程序 Token，必须先在电脑端 WebUI 使用 macOS 工具获取。工具只应分析你自己的账号与流量；请勿把 Token 发送给他人。",
+                        "Android 端无法直接抓取微信小程序 Token，必须先在电脑端使用 macOS 或 Windows 工具获取。工具只应分析你自己的账号与流量；请勿把 Token 发送给他人。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

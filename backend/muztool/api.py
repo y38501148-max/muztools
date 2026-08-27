@@ -1358,3 +1358,16 @@ async def download_checkin_token_macos():
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@app.get("/downloads/muz-checkin-token-windows.zip")
+async def download_checkin_token_windows():
+    return FileResponse(
+        WEB_DIR / "MuzTool-Checkin-Token-Windows.zip",
+        filename="MuzTool-Checkin-Token-Windows.zip",
+        media_type="application/zip",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

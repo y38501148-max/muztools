@@ -39,6 +39,8 @@ class CheckinViewModel(private val apiClient: ApiClient) : ViewModel() {
     private val _messageFlow = MutableSharedFlow<String>()
     val messageFlow: SharedFlow<String> = _messageFlow.asSharedFlow()
 
+    fun checkinTokenDownloadUrl(platform: String): String = apiClient.checkinTokenDownloadUrl(platform)
+
     fun load() {
         if (_uiState.value.isLoading || _uiState.value.providers.isNotEmpty()) return
         viewModelScope.launch {
