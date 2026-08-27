@@ -44,7 +44,6 @@ def _locked_write(path: Path, data: Any) -> None:
 
 
 FEATURE_KEYS = ("signin", "td", "spark")
-DOUYIN_ALLOWED_USERNAME = "muzermat"
 
 
 def user_path(user_id: str) -> Path:
@@ -114,14 +113,36 @@ def empty_user(username: str, password: str, display_name: str) -> dict[str, Any
 
 
 
-def can_use_douyin(user: dict[str, Any]) -> bool:
-    return str(user.get("username") or "").casefold() == DOUYIN_ALLOWED_USERNAME
-
-
 def set_douyin_cookies(douyin: dict[str, Any], cookies: list[dict[str, Any]]) -> None:
     payload = json.dumps(cookies or [], ensure_ascii=False, separators=(",", ":"))
     douyin["cookies_encrypted"] = encrypt_secret(payload) if cookies else ""
     douyin.pop("cookies", None)
+
+
+def set_tibo_x_cookies(tibo: dict[str, Any], cookies: dict[str, str]) -> None:
+    payload = json.dumps({"auth_token": cookies["auth_token"], "ct0": cookies["ct0"]}, ensure_ascii=False, separators=(",", ":"))
+    tibo["x_cookies_encrypted"] = encrypt_secret(payload)
+    tibo.pop("x_auth_notified_date", None)
+
+
+def get_tibo_x_cookies(tibo: dict[str, Any]) -> dict[str, str]:
+    encrypted = tibo.get("x_cookies_encrypted")
+    if not encrypted:
+        return {}
+    try:
+        value = json.loads(decrypt_secret(encrypted))
+    except Exception as exc:
+        raise ValueError("服务器保存的 X Cookie 无法解密，请重新导入") from exc
+    if not isinstance(value, dict):
+        return {}
+    auth_token = str(value.get("auth_token") or "")
+    ct0 = str(value.get("ct0") or "")
+    return {"auth_token": auth_token, "ct0": ct0} if auth_token and ct0 else {}
+
+
+def clear_tibo_x_cookies(tibo: dict[str, Any]) -> None:
+    tibo.pop("x_cookies_encrypted", None)
+    tibo.pop("x_auth_notified_date", None)
 
 
 def get_douyin_cookies(douyin: dict[str, Any]) -> list[dict[str, Any]]:
@@ -153,6 +174,22 @@ def get_douyin_friends_cache(douyin: dict[str, Any]) -> list[dict[str, Any]]:
         return value if isinstance(value, list) else []
     legacy = douyin.get("friends_cache")
     return legacy if isinstance(legacy, list) else []
+
+def set_checkin_token(provider_cfg: dict[str, Any], token: str) -> None:
+    """保存签到 token；按 provider 命名空间存在 user["checkin"][provider_id] 里。"""
+    provider_cfg["token_encrypted"] = encrypt_secret(token) if token else ""
+    provider_cfg.pop("token", None)
+
+
+def get_checkin_token(provider_cfg: dict[str, Any]) -> str:
+    encrypted = provider_cfg.get("token_encrypted")
+    if encrypted:
+        try:
+            return decrypt_secret(encrypted)
+        except ValueError as exc:
+            raise ValueError("服务器保存的签到 token 无法解密，请重新配置") from exc
+    return str(provider_cfg.get("token") or "")
+
 
 def set_student_password(student: dict[str, Any], password: str) -> None:
     student["password_encrypted"] = encrypt_secret(password) if password else ""
@@ -203,9 +240,11 @@ def migrate_user_secrets(user: dict[str, Any]) -> bool:
         douyin["friends_cache_encrypted"] = ""
         douyin["friends_cache_initialized"] = False
         changed = True
-    if not can_use_douyin(user) and douyin.get("enabled"):
-        douyin["enabled"] = False
-        douyin["disabled_reason"] = "temporary_admin_only"
+    if douyin.get("disabled_reason") == "temporary_admin_only":
+        # Spark access is open to everyone again; restore the switch the
+        # temporary admin-only restriction force-disabled.
+        douyin.pop("disabled_reason", None)
+        douyin["enabled"] = True
         changed = True
 
     before = dict(user.get("approvals") or {})
@@ -331,7 +370,7 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
         "display_name": user.get("display_name"),
         "role": "admin" if str(user.get("username") or "").lower() == "muzermat" else "user",
         "can_manage_invites": str(user.get("username") or "").lower() == "muzermat",
-        "can_use_douyin": can_use_douyin(user),
+        "can_use_douyin": True,
         "created_at": user.get("created_at"),
         "student": {
             "student_id": student.get("student_id", ""),
@@ -342,7 +381,10 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
         },
         "approvals": ensure_approvals(user).get("approvals", {}),
         "td": user.get("td", {}),
-        "tibo": {"enabled": bool(user.get("tibo", {}).get("enabled", False))},
+        "tibo": {
+            "enabled": bool(user.get("tibo", {}).get("enabled", False)),
+            "x_connected": bool(user.get("tibo", {}).get("x_cookies_encrypted")),
+        },
         "douyin": {
             "connected": bool(user.get("douyin", {}).get("cookies_encrypted") or user.get("douyin", {}).get("cookies")),
             "username": user.get("douyin", {}).get("username", ""),

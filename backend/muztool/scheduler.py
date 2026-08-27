@@ -10,7 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .notify import push_notification, signin_success_message
 from .signin_core import TZ_BEIJING, safe_execute_sign_in, safe_fetch_schedule
-from .store import can_use_douyin, iter_users, save_user, student_runtime
+from .store import iter_users, save_user, student_runtime
 
 
 scheduler = AsyncIOScheduler(timezone=TZ_BEIJING)
@@ -136,6 +136,8 @@ async def daily_sync() -> None:
                     f"今日检测到 {len(sched)} 节课，已安排自动签到。",
                     "signin",
                 )
+            else:
+                push_notification(user, "自动签到", "您今天没有需要签到的课", "signin")
         except Exception as exc:
             push_notification(user, "自动签到", f"今日课表同步失败：{exc}", "signin")
 
@@ -179,12 +181,6 @@ async def douyin_hourly() -> None:
 
     for user in iter_users():
         cfg = user.setdefault("douyin", {})
-        if not can_use_douyin(user):
-            if cfg.get("enabled"):
-                cfg["enabled"] = False
-                cfg["disabled_reason"] = "temporary_admin_only"
-                save_user(user)
-            continue
         now = datetime.now(TZ_BEIJING)
         schedule_before = (
             cfg.get("auto_schedule_date"),
@@ -275,9 +271,38 @@ async def douyin_hourly() -> None:
 
 
 async def tibo_monitor() -> None:
-    from .tibo import check_tibo_updates
+    from .tibo import (
+        XAuthError,
+        check_tibo_updates,
+        fetch_tibo_posts_authenticated,
+        get_user_x_cookies,
+        iter_x_cookie_users,
+        notify_x_cookie_expired,
+    )
+
+    def cookie_fetcher(cookies: dict[str, str]):
+        async def fetch(_seen, now, _lookback):
+            return await fetch_tibo_posts_authenticated(cookies, now)
+
+        return fetch
 
     try:
+        users = iter_x_cookie_users()
+        if users:
+            # Rotate the starting credential hourly so one account does not
+            # carry the whole monitoring load.
+            start = datetime.now(TZ_BEIJING).hour % len(users)
+            for user in users[start:] + users[:start]:
+                cookies = get_user_x_cookies(user)
+                if not cookies:
+                    continue
+                try:
+                    await check_tibo_updates(fetcher=cookie_fetcher(cookies))
+                    return
+                except XAuthError:
+                    notify_x_cookie_expired(user, datetime.now(TZ_BEIJING))
+                except Exception:
+                    logger.warning("Tibo authenticated check failed, trying next credential", exc_info=True)
         await check_tibo_updates()
     except Exception:
         # A failed X request must not affect sign-in or spark scheduling. The

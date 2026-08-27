@@ -289,7 +289,14 @@ data class TiboHistoryResponse(
     val items: List<TiboPostItem> = emptyList(),
     val count: Int = 0,
     @SerialName("last_checked") val lastChecked: String = "",
-    val enabled: Boolean = false
+    val enabled: Boolean = false,
+    @SerialName("x_connected") val xConnected: Boolean = false
+)
+
+@Serializable
+data class TiboXSessionResponse(
+    val valid: Boolean = false,
+    val message: String = ""
 )
 
 @Serializable
@@ -300,6 +307,71 @@ data class TiboConfigResponse(
     val success: Boolean = false,
     val enabled: Boolean = false,
     val message: String = ""
+)
+
+@Serializable
+data class CheckinProvider(
+    val id: String = "",
+    val name: String = "",
+    val description: String = ""
+)
+
+@Serializable
+data class CheckinProvidersResponse(
+    val providers: List<CheckinProvider> = emptyList()
+)
+
+@Serializable
+data class CheckinConfigResponse(
+    val provider: String = "",
+    val connected: Boolean = false,
+    @SerialName("token_tail") val tokenTail: String = "",
+    val message: String = ""
+)
+
+@Serializable
+data class CheckinActivityField(
+    val title: String = "",
+    @SerialName("data_type") val dataType: Int = 1,
+    val required: Boolean = false,
+    val options: List<String> = emptyList()
+)
+
+@Serializable
+data class CheckinActivity(
+    val code: String = "",
+    val name: String = "",
+    @SerialName("start_at") val startAt: String = "",
+    @SerialName("end_at") val endAt: String = "",
+    @SerialName("can_sign") val canSign: Int = 0,
+    @SerialName("location_required") val locationRequired: Boolean = false,
+    @SerialName("location_address") val locationAddress: String = "",
+    @SerialName("location_longitude") val locationLongitude: String = "",
+    @SerialName("location_latitude") val locationLatitude: String = "",
+    @SerialName("sign_time") val signTime: List<List<String>> = emptyList(),
+    val fields: List<CheckinActivityField> = emptyList()
+)
+
+@Serializable
+data class CheckinPreviewRequest(val code: String)
+
+@Serializable
+data class CheckinPreviewResponse(
+    val provider: String = "",
+    val activity: CheckinActivity = CheckinActivity()
+)
+
+@Serializable
+data class CheckinSignRequest(
+    val code: String,
+    val values: Map<String, String> = emptyMap()
+)
+
+@Serializable
+data class CheckinSignResponse(
+    val success: Boolean = false,
+    val message: String = "",
+    val activity: String = ""
 )
 
 @Serializable

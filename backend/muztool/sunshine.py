@@ -64,6 +64,23 @@ async def _oauth_code(client: httpx.AsyncClient) -> str:
 
 
 def _unwrap(payload: dict[str, Any]) -> dict[str, Any]:
+    # Current ygdk format (since 2026): {"code": 1, "result": {...}, "msg": ""}
+    # with code -98 meaning the stored login expired.
+    if "code" in payload or "result" in payload:
+        try:
+            code = int(payload.get("code"))
+        except (TypeError, ValueError):
+            code = -1
+        if code == 1:
+            result = payload.get("result")
+            if isinstance(result, dict):
+                data = result.get("data")
+                return data if isinstance(data, dict) else result
+            return payload
+        if code == -98:
+            raise ValueError("阳光打卡登录已失效，请稍后重试")
+        raise ValueError(payload.get("msg") or "阳光打卡接口失败")
+    # Legacy format: {"e": 0, "d": {...}}
     if str(payload.get("e")) not in {"0", "None"} and payload.get("e") not in {0, None}:
         raise ValueError(payload.get("m") or "阳光打卡接口失败")
     data = payload.get("d") or payload.get("data") or payload

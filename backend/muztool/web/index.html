@@ -696,6 +696,15 @@
     douyinFriendsError: "",
     douyinFriendsCachedAt: "",
     douyinFriendQuery: "",
+    checkinProviders: null,
+    checkinProvider: "",
+    checkinConfigs: {},
+    checkinEditingToken: false,
+    checkinCode: "",
+    checkinActivity: null,
+    checkinValues: {},
+    checkinResult: null,
+    checkinError: "",
     tiboHistory: null,
     liveSocket: null,
     liveReconnectTimer: null
@@ -889,6 +898,9 @@
       } else if (current === "tibo") {
         container.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><div>Tibo 历史缓存加载中...</div></div>`;
         container.innerHTML = await renderTiboView();
+      } else if (current === "checkin") {
+        container.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><div>签到工具加载中...</div></div>`;
+        container.innerHTML = await renderCheckinView();
       } else {
         // 默认 home
         container.innerHTML = renderHomeView();
@@ -909,7 +921,7 @@
     const tabs = ["home", "features", "profile"];
     tabs.forEach(t => {
       const el = $("tab-" + t);
-      if (el) el.classList.toggle("active", t === route || (t === "features" && ["signin", "td", "spark", "tibo"].includes(route)));
+      if (el) el.classList.toggle("active", t === route || (t === "features" && ["signin", "td", "spark", "tibo", "checkin"].includes(route)));
     });
   }
 
@@ -1241,6 +1253,15 @@
         icon: "📡",
         status: "available",
         publicFeature: true
+      },
+      {
+        id: "checkin",
+        title: "签到工具",
+        desc: "支持多个签到小程序：输入活动码自动读取表单，远程一键签到",
+        tag: "工具",
+        color: "#2e7d32",
+        icon: "✅",
+        status: "available"
       }
     ];
     if (state.user?.can_manage_invites) {
@@ -1319,10 +1340,22 @@
         </div>
       </div>
       <div class="card">
+        <div class="row-between" style="align-items: flex-start;">
+          <div style="flex: 1; padding-right: 12px;">
+            <h3>X 登录 Cookie</h3>
+            <p class="muted-sm" style="margin-top: 4px;">${data.x_connected ? "已导入：监测将优先通过你的 Cookie 拉取 Tibo 的完整时间线，覆盖最近一周的全部推文。" : "未导入：仅能匿名监测最近几条推文，较早的 reset 推文可能被错过；导入自己的 X Cookie 后可覆盖完整一周。"}</p>
+          </div>
+          <button type="button" class="btn ${data.x_connected ? "ghost" : ""}" data-action="open-tibo-cookie-dialog">
+            ${data.x_connected ? "更换 Cookie" : "导入 Cookie"}
+          </button>
+        </div>
+        ${data.x_connected ? `<button type="button" class="btn ghost wide" data-action="remove-tibo-x-cookie" style="margin-top: 10px;">移除已保存的 Cookie</button>` : ""}
+      </div>
+      <div class="card">
         <div class="row-between">
           <div>
             <h3>历史推特缓存</h3>
-            <p class="muted-sm">后端启动时立即检查，之后每小时检查过去 24 小时的推特；仅标记并保留包含 reset 的记录，最多 100 条。查看历史不受推送开关影响。</p>
+            <p class="muted-sm">后端每小时检查过去一周的推文，优先使用已导入的 X Cookie 拉取完整时间线；仅标记并保留包含 reset 的记录，最多 100 条。查看历史不受推送开关影响。</p>
           </div>
           <span class="badge ok">${items.length} 条</span>
         </div>
@@ -1862,6 +1895,134 @@
   }
 
   // 6. 个人中心视图
+  // 签到工具页面：按 provider 分支，支持多个签到小程序
+  async function renderCheckinView() {
+    if (!state.checkinProviders) {
+      const data = await api("/api/checkin/providers").catch(() => ({providers: []}));
+      state.checkinProviders = Array.isArray(data.providers) ? data.providers : [];
+    }
+    const providers = state.checkinProviders || [];
+    if (!providers.length) {
+      return `
+        ${renderPageBackHeader("签到工具")}
+        <div class="empty-state"><div class="empty-icon">📭</div><div>暂无可用的签到平台</div></div>
+      `;
+    }
+    if (!state.checkinProvider || !providers.some(p => p.id === state.checkinProvider)) {
+      state.checkinProvider = providers[0].id;
+    }
+    const providerId = state.checkinProvider;
+    if (!state.checkinConfigs[providerId]) {
+      state.checkinConfigs[providerId] = await api(`/api/checkin/${encodeURIComponent(providerId)}/config`).catch(() => ({connected: false, token_tail: ""}));
+    }
+    const cfg = state.checkinConfigs[providerId] || {connected: false, token_tail: ""};
+    const act = state.checkinActivity;
+    const result = state.checkinResult;
+
+    const providerCard = providers.length > 1
+      ? `
+      <div class="card">
+        <h3>签到平台</h3>
+        <select id="checkin-provider" class="input" style="margin-top: 12px;">
+          ${providers.map(p => `<option value="${esc(p.id)}" ${p.id === providerId ? "selected" : ""}>${esc(p.name || p.id)}</option>`).join("")}
+        </select>
+      </div>`
+      : "";
+
+    const tokenCard = (cfg.connected && !state.checkinEditingToken)
+      ? `
+      <div class="card">
+        <div class="row-between">
+          <div class="row" style="flex: 1;">
+            <div class="icon-box" style="background: #2e7d3218; color: #2e7d32;">🔑</div>
+            <div style="flex: 1;">
+              <h3>签到 Token 已配置</h3>
+              <p class="muted-sm" style="margin-top: 2px;">当前 token：····${esc(cfg.token_tail || "")}（约 2 小时有效，失效后请重新获取）</p>
+            </div>
+          </div>
+          <button type="button" class="btn soft sm" data-action="checkin-edit-token">更换</button>
+        </div>
+      </div>`
+      : `
+      <div class="card">
+        <h3>配置签到 Token</h3>
+        <p class="muted-sm" style="margin: 6px 0 12px;">在「${esc(providers.find(p => p.id === providerId)?.name || providerId)}」小程序中登录后，从请求头 <code>authori-zation</code> 获取 32 位 token。约 2 小时有效，重新登录会使旧 token 失效。</p>
+        <div class="row" style="gap: 8px;">
+          <input id="checkin-token-input" class="input" style="flex: 1;" placeholder="32 位十六进制 token" autocomplete="off" spellcheck="false" value="" />
+          <button type="button" class="btn" data-action="checkin-save-token">保存并验证</button>
+          ${cfg.connected ? `<button type="button" class="btn soft" data-action="checkin-cancel-edit-token">取消</button>` : ""}
+        </div>
+      </div>`;
+
+    const activityCard = `
+      <div class="card">
+        <h3>签到活动</h3>
+        <div class="row" style="gap: 8px; margin-top: 12px;">
+          <input id="checkin-code-input" class="input" style="flex: 1;" placeholder="活动码，如 AS202608243746752343" autocomplete="off" spellcheck="false" value="${esc(state.checkinCode || "")}" />
+          <button type="button" class="btn" data-action="checkin-preview">查询</button>
+        </div>
+      </div>`;
+
+    let detailCards = "";
+    if (act) {
+      const windows = (Array.isArray(act.sign_time) ? act.sign_time : [])
+        .map(w => Array.isArray(w) ? `${esc(String(w[0] || ""))} ~ ${esc(String(w[1] || ""))}` : "")
+        .filter(Boolean)
+        .join("、");
+      const fieldsHtml = (act.fields || []).map(f => `
+        <div style="margin-top: 12px;">
+          <label class="muted-sm" style="display:block;margin-bottom:6px;font-weight:600;">${esc(f.title)}${f.required ? ' <span style="color:#dc2626;">*</span>' : ""}</label>
+          ${(f.options || []).length
+            ? `<select class="input" data-checkin-field="${esc(f.title)}">${(f.options || []).map(o => `<option value="${esc(o)}" ${state.checkinValues[f.title] === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`
+            : `<input class="input" data-checkin-field="${esc(f.title)}" value="${esc(state.checkinValues[f.title] || "")}" autocomplete="off" />`}
+        </div>`).join("");
+
+      detailCards = `
+      <div class="card">
+        <div class="row-between" style="align-items: flex-start;">
+          <div style="flex: 1; padding-right: 12px;">
+            <h3>${esc(act.name || "未命名活动")}</h3>
+            <p class="muted-sm" style="margin-top: 4px;">活动时间：${esc(act.start_at || "?")} ~ ${esc(act.end_at || "?")}${windows ? `（签到时段 ${windows}）` : ""}</p>
+            ${act.location_required ? `<p class="muted-sm" style="margin-top: 4px;">📍 定位签到：${esc(act.location_address || "已开启")}，将自动使用活动坐标完成</p>` : ""}
+          </div>
+          <span class="badge ${act.can_sign === 1 ? "ok" : "gray"}">${act.can_sign === 1 ? "可签到" : "状态 " + esc(String(act.can_sign))}</span>
+        </div>
+        ${fieldsHtml ? `<div style="margin-top: 16px;">${fieldsHtml}</div>` : `<p class="muted-sm" style="margin-top: 12px;">该活动无需填写表单。</p>`}
+        <div class="row" style="margin-top: 16px; justify-content: flex-end;">
+          <button type="button" class="btn" data-action="checkin-sign">执行签到</button>
+        </div>
+      </div>`;
+    }
+
+    let resultCard = "";
+    if (result) {
+      resultCard = `
+      <div class="card" style="${result.success ? "background: var(--ok-bg, #ecfdf5); border-color: #a7f3d0;" : "background: var(--warn-bg, #fffbeb); border-color: #fde68a;"}">
+        <div class="row">
+          <div style="font-size: 20px;">${result.success ? "✅" : "⚠️"}</div>
+          <div style="flex: 1;">
+            <b>${esc(result.activity || "")}${result.success ? " 签到成功" : ""}</b>
+            <p class="muted-sm" style="margin-top: 2px;">${esc(result.message || "")}</p>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    const errorCard = state.checkinError
+      ? `<div class="card" style="background: var(--warn-bg, #fffbeb); border-color: #fde68a;"><p style="margin:0;">⚠️ ${esc(state.checkinError)}</p></div>`
+      : "";
+
+    return `
+      ${renderPageBackHeader("签到工具")}
+      ${errorCard}
+      ${resultCard}
+      ${providerCard}
+      ${tokenCard}
+      ${activityCard}
+      ${detailCards}
+    `;
+  }
+
   function renderProfileView() {
     const u = state.user || {};
     const s = state.student || {};
@@ -1988,6 +2149,25 @@
       <div class="row" style="margin-top: 18px; gap: 10px;">
         <button type="button" class="btn ghost" data-action="close-modal" style="flex: 1;">取消</button>
         <button type="button" class="btn" data-action="submit-modal-cookies" style="flex: 1;">确认绑定</button>
+      </div>
+    `);
+  }
+
+  function openTiboCookieModal() {
+    showModal(`
+      <h3 style="margin-bottom: 12px;">导入 X Cookie</h3>
+      <p class="muted-sm" style="margin-bottom: 14px; line-height: 1.6;">
+        登录 x.com 后，用 Cookie-Editor 等浏览器扩展导出完整 Cookie（JSON 数组，或包含 auth_token 与 ct0 的 Cookie 字符串均可）。Cookie 等同登录凭证，仅会加密保存在服务器上，用于以你的身份读取 Tibo 的公开时间线，请勿泄露给他人。
+      </p>
+
+      <div class="input-group">
+        <label for="modal-tibo-cookies">Cookie 内容</label>
+        <textarea id="modal-tibo-cookies" style="min-height: 180px;" placeholder='粘贴 Cookie JSON 数组或 auth_token=...; ct0=... 形式的 Cookie'></textarea>
+      </div>
+
+      <div class="row" style="margin-top: 18px; gap: 10px;">
+        <button type="button" class="btn ghost" data-action="close-modal" style="flex: 1;">取消</button>
+        <button type="button" class="btn" data-action="submit-tibo-cookies" style="flex: 1;">确认导入</button>
       </div>
     `);
   }
@@ -2201,6 +2381,112 @@
         if (state.tiboHistory) state.tiboHistory.enabled = Boolean(result.enabled);
         if (state.user) state.user.tibo = { enabled: Boolean(result.enabled) };
         toast(result.message || (result.enabled ? "Tibo 推送已开启" : "Tibo 推送已关闭"));
+        await renderPage();
+      });
+      return;
+    }
+
+    // 打开 X Cookie 导入弹窗
+    if (action === "open-tibo-cookie-dialog") {
+      openTiboCookieModal();
+      return;
+    }
+
+    // 提交 X Cookie 导入
+    if (action === "submit-tibo-cookies") {
+      await withButtonLoading(actionBtn, async () => {
+        const cookies = $("modal-tibo-cookies").value.trim();
+        if (!cookies) throw new Error("请输入 Cookie 内容");
+        await api("/api/tibo/x-session", {
+          method: "POST",
+          body: { encrypted_secret: await encryptLargeSecret(cookies) }
+        });
+        closeModal();
+        toast("X Cookie 导入成功");
+        await renderPage();
+      });
+      return;
+    }
+
+    // 移除已保存的 X Cookie
+    if (action === "remove-tibo-x-cookie") {
+      await withButtonLoading(actionBtn, async () => {
+        await api("/api/tibo/x-session", { method: "DELETE" });
+        toast("已移除 X Cookie");
+        await renderPage();
+      });
+      return;
+    }
+
+
+    // 签到工具：token 保存 / 查询 / 签到
+    if (action === "checkin-save-token") {
+      await withButtonLoading(actionBtn, async () => {
+        const input = $("checkin-token-input");
+        const token = (input && input.value || "").trim();
+        if (!token) { toast("请输入签到 token"); return; }
+        const providerId = state.checkinProvider;
+        const payload = await encryptedFields({token});
+        const result = await api(`/api/checkin/${encodeURIComponent(providerId)}/config`, {method: "PUT", body: payload});
+        state.checkinConfigs[providerId] = result;
+        state.checkinEditingToken = false;
+        state.checkinResult = null;
+        state.checkinError = "";
+        toast(result.message || "签到 token 已保存");
+        await renderPage();
+      });
+      return;
+    }
+
+    if (action === "checkin-edit-token") {
+      state.checkinEditingToken = true;
+      await renderPage();
+      return;
+    }
+
+    if (action === "checkin-cancel-edit-token") {
+      state.checkinEditingToken = false;
+      await renderPage();
+      return;
+    }
+
+    if (action === "checkin-preview") {
+      await withButtonLoading(actionBtn, async () => {
+        const input = $("checkin-code-input");
+        const code = (input && input.value || "").trim();
+        if (!code) { toast("请输入活动码"); return; }
+        state.checkinCode = code;
+        state.checkinError = "";
+        try {
+          const result = await api(`/api/checkin/${encodeURIComponent(state.checkinProvider)}/preview`, {method: "POST", body: {code}});
+          state.checkinActivity = result.activity || null;
+          state.checkinValues = {};
+          state.checkinResult = null;
+        } catch (err) {
+          state.checkinActivity = null;
+          state.checkinError = err.message;
+        }
+        await renderPage();
+      });
+      return;
+    }
+
+    if (action === "checkin-sign") {
+      await withButtonLoading(actionBtn, async () => {
+        const activity = state.checkinActivity;
+        if (!activity || !activity.code) { toast("请先查询签到活动"); return; }
+        const values = {};
+        document.querySelectorAll("[data-checkin-field]").forEach(el => {
+          const title = el.dataset.checkinField;
+          if (title) values[title] = el.value;
+        });
+        try {
+          const result = await api(`/api/checkin/${encodeURIComponent(state.checkinProvider)}/sign`, {method: "POST", body: {code: activity.code, values}});
+          state.checkinResult = result;
+          state.checkinError = "";
+        } catch (err) {
+          state.checkinError = err.message;
+        }
         await renderPage();
       });
       return;
@@ -2485,6 +2771,16 @@
   });
 
   document.addEventListener("input", (e) => {
+    const checkinCode = e.target.closest("#checkin-code-input");
+    if (checkinCode) {
+      state.checkinCode = checkinCode.value.trim();
+      return;
+    }
+    const checkinField = e.target.closest("[data-checkin-field]");
+    if (checkinField && checkinField.dataset.checkinField) {
+      state.checkinValues[checkinField.dataset.checkinField] = checkinField.value;
+      return;
+    }
     const friendSearch = e.target.closest("#spark-friend-search");
     if (friendSearch) {
       state.douyinFriendQuery = friendSearch.value;
@@ -2501,6 +2797,22 @@
   });
 
   document.addEventListener("change", (e) => {
+    const providerSelect = e.target.closest("#checkin-provider");
+    if (providerSelect && providerSelect.value && providerSelect.value !== state.checkinProvider) {
+      state.checkinProvider = providerSelect.value;
+      state.checkinActivity = null;
+      state.checkinValues = {};
+      state.checkinResult = null;
+      state.checkinError = "";
+      state.checkinEditingToken = false;
+      renderPage();
+      return;
+    }
+    const checkinSelect = e.target.closest("select[data-checkin-field]");
+    if (checkinSelect && checkinSelect.dataset.checkinField) {
+      state.checkinValues[checkinSelect.dataset.checkinField] = checkinSelect.value;
+      return;
+    }
     if (e.target.closest("#td-campus")) {
       updateTdMachineOptions();
       return;

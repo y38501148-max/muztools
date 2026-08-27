@@ -122,7 +122,7 @@ muz-tool/
 - Cookie API 只接受 RSA 包装随机 AES-256-GCM 密钥的 `encrypted_secret` 混合信封；后端拒绝明文字段。
 - Cookie 与好友缓存分别保存为 `cookies_encrypted` 和 `friends_cache_encrypted`；旧明文字段在读取时迁移并删除，用户 JSON 文件权限为 `0600`、数据子目录为 `0700`。
 - WebUI 在安全上下文优先使用 Web Crypto；HTTP 入口使用仓库内置的 `@noble/ciphers` AES-GCM 回退文件，必须保留其 MIT 许可证。
-- 续火花安全整改期间仅用户名严格等于 `muzermat` 的账号可访问；其他账号后端返回 404，调度器强制关闭开关。
+- 续火花已对全部登录账号开放（2026-08-27 起）；`public_user` 仍返回 `can_use_douyin` 字段恒为 `true`，供旧客户端判断入口显隐，不得恢复按用户名限制访问的逻辑。
 - 自动或手动发送要求每个目标同时具备稳定 `conversation_id` 和明确 `conversation_type`；禁止退回名称搜索或同名首项。
 - 点击会话后必须重新读取活动会话 ID、类型和名称并完全一致；任一稳定标识无法读取时停止发送。
 - 按下 Enter 后必须确认同文案消息数量增加；输入框清空本身不能作为成功依据。
@@ -132,11 +132,19 @@ muz-tool/
 - 每日自动续火花在用户设置的基础整点前后 5 分钟内随机选择一次，并将当日实际时间、基础小时和偏移持久化；同一天服务重启或每分钟检查不得重新抽签。0 点和 23 点配置不得跨越北京时间日期边界。
 - 每次浏览器执行结束后保存刷新后的 Cookie；重新导入 Cookie 时关闭自动任务并清空旧目标，防止跨账号误发。
 
+### TD 查询与阳光打卡
+
+- 2026-08 起 BUAA 健康云（`MUZTOOLS_TD_HOST`）网页改版，学生侧已无锻炼次数页面，`query_td_counts` 报“页面已改版”属预期，不得为兼容旧页面而恢复旧解析；TCP 手动打卡（8888 端口）协议未变。
+- ygdk（阳光打卡）API 响应已改为 `{code, result, msg}` 格式：`code==1` 成功（登录接口在 `result.data`），`code==-98` 登录失效，其余报 `msg`；`_unwrap` 同时兼容旧 `{e, d}` 格式。
+- iClass 课表接口对当天无课返回 `{"STATUS":"2"}` 且无 ERRMSG，`parse_schedule_payload` 将其视为空课表而非错误。
+
 ### Tibo 监测
 
 - 账号 `@thsottiaux`，关键词不区分大小写匹配 `reset`。
-- 服务启动时立即检查，之后每小时检查过去 24 小时，最多缓存 100 条包含 `reset` 的记录。
-- 仅为打开 Tibo 开关的用户生成通知；第一次成功检查只建立 24 小时基线。
+- 服务启动时立即检查，之后每小时检查过去一周（168 小时），最多缓存 100 条包含 `reset` 的记录。X 匿名页面结构变化（如 `data-tweet-id` 移除、schema.org 属性改驼峰）会造成静默解析失败，修改解析器时必须用真实页面验证；连续 6 次零发现会向 `muzermat` 推送监测异常告警。
+- 用户可通过 `POST /api/tibo/x-session` 导入自己的 X Cookie（douyin 同款 RSA+AES 混合信封，仅需 `auth_token` 与 `ct0`），AES-GCM 加密存于 `tibo.x_cookies_encrypted`，导入时用 GraphQL `UserByScreenName` 实时验证。
+- 监测优先使用已导入 Cookie 走 GraphQL `UserTweets` 分页拉取完整时间线（bearer/queryId 从 main bundle 动态解析，X 部署会轮换），每小时轮换起始用户分摊请求量；Cookie 失效（401/403）时通知属主重新导入（每日最多一次）；全部失败时回退匿名 HTML。匿名模式仅覆盖主页第一页，较早的推文会被滚出。
+- 仅为打开 Tibo 开关的用户生成通知；第一次成功检查只建立基线。
 
 ### FCM 后台推送
 
@@ -179,7 +187,7 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.3.9 为 `versionCode 26`；v1.3.8 为 `versionCode 25`。
+发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.4.1 为 `versionCode 28`；v1.4.0 为 `versionCode 27`。
 
 ## 服务端部署
 

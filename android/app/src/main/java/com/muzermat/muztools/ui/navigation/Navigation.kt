@@ -13,6 +13,8 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 import com.muzermat.muztools.ui.screens.auth.AuthScreen
 import com.muzermat.muztools.ui.screens.auth.AuthViewModel
+import com.muzermat.muztools.ui.screens.checkin.CheckinScreen
+import com.muzermat.muztools.ui.screens.checkin.CheckinViewModel
 import com.muzermat.muztools.ui.screens.features.FeaturesScreen
 import com.muzermat.muztools.ui.screens.home.HomeScreen
 import com.muzermat.muztools.ui.screens.home.HomeViewModel
@@ -57,6 +59,7 @@ fun AppNavigation(
     tdViewModel: TdViewModel,
     sparkViewModel: SparkViewModel,
     tiboViewModel: TiboViewModel,
+    checkinViewModel: CheckinViewModel,
     profileViewModel: ProfileViewModel
 ) {
     val navController = rememberNavController()
@@ -72,6 +75,7 @@ fun AppNavigation(
                 onLoginSuccess = {
                     homeViewModel.reset()
                     sparkViewModel.reset()
+                    checkinViewModel.reset()
                     homeViewModel.loadIfNeeded()
                     navController.navigate(Screen.Main.route) {
                         popUpTo(Screen.Auth.route) { inclusive = true }
@@ -86,6 +90,7 @@ fun AppNavigation(
                 onLogout = {
                     homeViewModel.reset()
                     sparkViewModel.reset()
+                    checkinViewModel.reset()
                     authViewModel.logout()
                     navController.navigate(Screen.Auth.route) {
                         popUpTo(Screen.Main.route) { inclusive = true }
@@ -96,6 +101,7 @@ fun AppNavigation(
                 tdViewModel = tdViewModel,
                 sparkViewModel = sparkViewModel,
                 tiboViewModel = tiboViewModel,
+                checkinViewModel = checkinViewModel,
                 profileViewModel = profileViewModel
             )
         }
@@ -110,6 +116,7 @@ fun MainContainer(
     tdViewModel: TdViewModel,
     sparkViewModel: SparkViewModel,
     tiboViewModel: TiboViewModel,
+    checkinViewModel: CheckinViewModel,
     profileViewModel: ProfileViewModel
 ) {
     val tabNavController = rememberNavController()
@@ -177,13 +184,15 @@ fun MainContainer(
                     onOpenSignin = { tabNavController.navigate("feature/signin") },
                     onOpenTd = { tabNavController.navigate("feature/td") },
                     onOpenSpark = { tabNavController.navigate("feature/spark") },
-                    onOpenTibo = { tabNavController.navigate("feature/tibo") }
+                    onOpenTibo = { tabNavController.navigate("feature/tibo") },
+                    onOpenCheckin = { tabNavController.navigate("feature/checkin") }
                 )
             }
             composable("feature/signin") { SigninScreen(viewModel = signinViewModel) }
             composable("feature/td") { TdScreen(viewModel = tdViewModel) }
             composable("feature/spark") { SparkScreen(viewModel = sparkViewModel) }
             composable("feature/tibo") { TiboScreen(viewModel = tiboViewModel) }
+            composable("feature/checkin") { CheckinScreen(viewModel = checkinViewModel) }
             composable(BottomTab.Profile.route) {
                 ProfileScreen(
                     viewModel = profileViewModel,

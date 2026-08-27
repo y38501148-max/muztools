@@ -346,8 +346,49 @@ class ApiClient(private val prefs: PreferencesManager) {
     suspend fun getTiboHistory(): Result<TiboHistoryResponse> =
         executeGet("/api/tibo/history")
 
+    suspend fun submitTiboXSession(cookies: String): Result<TiboXSessionResponse> = withContext(Dispatchers.IO) {
+        val encrypted = hybridSecretRequest(cookies).getOrElse { return@withContext Result.failure(it) }
+        val bodyJson = json.encodeToString(encrypted)
+        val request = Request.Builder()
+            .url(getFullUrl("/api/tibo/x-session"))
+            .post(bodyJson.toRequestBody(jsonMediaType))
+            .build()
+        try {
+            val response = longClient().newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(json.decodeFromString<TiboXSessionResponse>(responseBody))
+            } else {
+                Result.failure(ApiException(response.code, responseBody.ifBlank { response.message }))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteTiboXSession(): Result<TiboXSessionResponse> =
+        executeDelete("/api/tibo/x-session", mapOf<String, String>())
+
     suspend fun updateTiboConfig(enabled: Boolean): Result<TiboConfigResponse> =
         executePut("/api/tibo/config", TiboConfigRequest(enabled))
+
+    suspend fun getCheckinProviders(): Result<CheckinProvidersResponse> =
+        executeGet("/api/checkin/providers")
+
+    suspend fun getCheckinConfig(provider: String): Result<CheckinConfigResponse> =
+        executeGet("/api/checkin/${android.net.Uri.encode(provider)}/config")
+
+    suspend fun saveCheckinToken(provider: String, token: String): Result<CheckinConfigResponse> =
+        encryptedRequest(mapOf("token" to token)).fold(
+            onSuccess = { executePut("/api/checkin/${android.net.Uri.encode(provider)}/config", it) },
+            onFailure = { Result.failure(it) }
+        )
+
+    suspend fun previewCheckin(provider: String, code: String): Result<CheckinPreviewResponse> =
+        executePost("/api/checkin/${android.net.Uri.encode(provider)}/preview", CheckinPreviewRequest(code))
+
+    suspend fun submitCheckin(provider: String, code: String, values: Map<String, String>): Result<CheckinSignResponse> =
+        executePost("/api/checkin/${android.net.Uri.encode(provider)}/sign", CheckinSignRequest(code, values))
 
     suspend fun getAppVersion(): Result<AppVersion> =
         executeGet("/api/app/version")

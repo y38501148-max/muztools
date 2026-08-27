@@ -21,6 +21,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.muzermat.muztools.ui.navigation.AppNavigation
 import com.muzermat.muztools.ui.screens.auth.AuthViewModel
+import com.muzermat.muztools.ui.screens.checkin.CheckinViewModel
 import com.muzermat.muztools.ui.screens.home.HomeViewModel
 import com.muzermat.muztools.ui.screens.profile.ProfileViewModel
 import com.muzermat.muztools.ui.screens.signin.SigninViewModel
@@ -98,6 +99,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val checkinViewModel: CheckinViewModel by viewModels {
+        val app = application as MuzApplication
+        object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                @Suppress("UNCHECKED_CAST")
+                return CheckinViewModel(app.apiClient) as T
+            }
+        }
+    }
+
     private val updateViewModel: UpdateViewModel by viewModels {
         val app = application as MuzApplication
         object : ViewModelProvider.Factory {
@@ -147,6 +158,7 @@ class MainActivity : ComponentActivity() {
                     tdViewModel = tdViewModel,
                     sparkViewModel = sparkViewModel,
                     tiboViewModel = tiboViewModel,
+                    checkinViewModel = checkinViewModel,
                     profileViewModel = profileViewModel
                 )
                 UpdateDialog(updateViewModel)

@@ -378,7 +378,7 @@ def test_relay_only_mode_exposes_only_update_endpoints(client_and_user, monkeypa
     assert client.get("/api/auth/session").status_code == 404
 
 
-def test_nonadmin_douyin_is_hidden_even_without_approval(client_and_user):
+def test_nonadmin_douyin_is_open_even_without_approval(client_and_user):
     client, user = client_and_user
     user["student"] = {"student_id": "", "status": "unbound", "auto_signin": False}
     user["approvals"] = {"signin": "none", "td": "pending", "spark": "rejected"}
@@ -392,14 +392,15 @@ def test_nonadmin_douyin_is_hidden_even_without_approval(client_and_user):
         "signin": "approved", "td": "approved", "spark": "approved"
     }
 
-    assert login.json()["user"]["can_use_douyin"] is False
+    assert login.json()["user"]["can_use_douyin"] is True
     session = client.get("/api/douyin/session")
-    assert session.status_code == 404
+    assert session.status_code == 200
+    assert session.json()["valid"] is False
     response = client.put(
         "/api/douyin/config",
         json={"enabled": False, "default_message": "续火花", "hour": 9, "targets": []},
     )
-    assert response.status_code == 404
+    assert response.status_code == 200
 
 def test_tibo_push_setting_defaults_off_and_persists(client_and_user, monkeypatch):
     client, user = client_and_user
@@ -728,3 +729,77 @@ def test_web_exposes_single_target_spark_test_action(client_and_user):
     assert response.status_code == 200
     assert 'data-action="run-spark-target"' in response.text
     assert 'api("/api/douyin/run-target"' in response.text
+
+
+def test_tibo_x_session_import_encrypts_at_rest(client_and_user, monkeypatch):
+    client, user = client_and_user
+    login = client.post("/api/auth/login", json=login_payload(client, keep_login=True))
+    assert login.status_code == 200
+
+    async def fake_verify(cookies):
+        assert cookies == {"auth_token": "tok-secret", "ct0": "ct-secret"}
+
+    monkeypatch.setattr(api_module.tibo, "verify_x_cookies", fake_verify)
+
+    plaintext = client.post("/api/tibo/x-session", json={"cookies": "auth_token=tok-secret"})
+    assert plaintext.status_code == 400
+    assert "仅接受加密凭据" in plaintext.json()["detail"]
+
+    response = client.post(
+        "/api/tibo/x-session",
+        json=hybrid_secret_payload(client, "auth_token=tok-secret; ct0=ct-secret"),
+    )
+    assert response.status_code == 200
+    assert response.json()["valid"] is True
+
+    raw = store.user_path(user["id"]).read_text(encoding="utf-8")
+    assert "tok-secret" not in raw
+    assert "ct-secret" not in raw
+    reloaded = store.load_user(user["id"])
+    assert reloaded["tibo"]["x_cookies_encrypted"].startswith("v1:")
+    assert store.get_tibo_x_cookies(reloaded["tibo"]) == {"auth_token": "tok-secret", "ct0": "ct-secret"}
+    assert store.public_user(reloaded)["tibo"]["x_connected"] is True
+
+    history = client.get("/api/tibo/history")
+    assert history.status_code == 200
+    assert history.json()["x_connected"] is True
+
+    removed = client.delete("/api/tibo/x-session")
+    assert removed.status_code == 200
+    reloaded = store.load_user(user["id"])
+    assert "x_cookies_encrypted" not in reloaded["tibo"]
+    assert store.public_user(reloaded)["tibo"]["x_connected"] is False
+
+
+def test_tibo_x_session_rejects_invalid_cookie(client_and_user, monkeypatch):
+    client, _user = client_and_user
+    login = client.post("/api/auth/login", json=login_payload(client, keep_login=True))
+    assert login.status_code == 200
+
+    async def fake_verify(cookies):
+        raise ValueError("X Cookie 无效或已过期")
+
+    monkeypatch.setattr(api_module.tibo, "verify_x_cookies", fake_verify)
+    response = client.post(
+        "/api/tibo/x-session",
+        json=hybrid_secret_payload(client, "auth_token=bad; ct0=bad"),
+    )
+    assert response.status_code == 400
+    assert "无效" in response.json()["detail"]
+
+
+def test_tibo_x_session_rejects_cookie_without_required_keys(client_and_user, monkeypatch):
+    client, _user = client_and_user
+    login = client.post("/api/auth/login", json=login_payload(client, keep_login=True))
+    assert login.status_code == 200
+
+    async def fake_verify(cookies):
+        raise AssertionError("must not be called")
+
+    monkeypatch.setattr(api_module.tibo, "verify_x_cookies", fake_verify)
+    response = client.post(
+        "/api/tibo/x-session",
+        json=hybrid_secret_payload(client, "sessionid=only"),
+    )
+    assert response.status_code == 400
+    assert "auth_token" in response.json()["detail"]

@@ -139,11 +139,21 @@ def test_legacy_douyin_secrets_migrate_and_user_file_is_private(isolated_data):
     assert (isolated_data / "users").stat().st_mode & 0o777 == 0o700
 
 
-def test_nonadmin_douyin_auto_is_disabled_during_migration():
+def test_nonadmin_douyin_stays_enabled_after_migration():
     user = store.create_user("ordinary_1", "Secret1", "Ordinary")
     user["douyin"]["enabled"] = True
     store.save_user(user)
     reloaded = store.load_user(user["id"])
-    assert reloaded["douyin"]["enabled"] is False
-    assert reloaded["douyin"]["disabled_reason"] == "temporary_admin_only"
-    assert store.public_user(reloaded)["can_use_douyin"] is False
+    assert reloaded["douyin"]["enabled"] is True
+    assert "disabled_reason" not in reloaded["douyin"]
+    assert store.public_user(reloaded)["can_use_douyin"] is True
+
+
+def test_migration_restores_admin_only_disabled_douyin():
+    user = store.create_user("ordinary_2", "Secret1", "Ordinary")
+    user["douyin"]["enabled"] = False
+    user["douyin"]["disabled_reason"] = "temporary_admin_only"
+    store.save_user(user)
+    reloaded = store.load_user(user["id"])
+    assert reloaded["douyin"]["enabled"] is True
+    assert "disabled_reason" not in reloaded["douyin"]

@@ -11,7 +11,6 @@ from fastapi import Body, Cookie, Depends, FastAPI, File, Header, HTTPException,
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from . import appver, config, sunshine, td
 from .fcm import register_token as register_fcm_token, unregister_token as unregister_fcm_token
 from .config import CORS_ORIGINS, ensure_dirs
 from .douyin import (
@@ -26,6 +25,7 @@ from .douyin import (
     validate_douyin_cookies,
     validate_spark_targets,
 )
+from .checkin import CheckinAuthError, CheckinError, get_provider, list_providers
 from .invites import consume_invite, invite_stats, issue_invite, release_invite
 from .security import decrypt_hybrid_secret, decrypt_transport_payload, public_transport_key, validate_password, validate_username
 from .notify import (
@@ -36,12 +36,12 @@ from .notify import (
     unsubscribe_live_notifications,
 )
 from .scheduler import start_scheduler
+from . import appver, config, sunshine, td, tibo
 from .tibo import list_tibo_history
 from .signin_core import perform_duaa_login, safe_fetch_schedule
 from .store import (
     FEATURE_KEYS,
     authenticate,
-    can_use_douyin,
     create_session,
     create_user,
     delete_session,
@@ -49,14 +49,18 @@ from .store import (
     find_user_by_username,
     get_douyin_cookies,
     get_douyin_friends_cache,
+    get_checkin_token,
     get_student_password,
     now_iso,
     photo_dir,
     public_user,
     save_user,
+    clear_tibo_x_cookies,
     set_douyin_cookies,
     set_douyin_friends_cache,
+    set_checkin_token,
     set_student_password,
+    set_tibo_x_cookies,
     student_runtime,
     user_from_token,
 )
@@ -193,7 +197,7 @@ def format_schedule(sched: list[dict[str, Any]], enabled: bool, approved: bool, 
                 "id": course.get("id"),
             }
         )
-    return {
+    payload = {
         "date": today,
         "courses": sched,
         "schedule": schedule,
@@ -202,6 +206,9 @@ def format_schedule(sched: list[dict[str, Any]], enabled: bool, approved: bool, 
         "auto_signin": enabled,
         "cached": cached,
     }
+    if not sched:
+        payload["message"] = "您今天没有需要签到的课"
+    return payload
 
 
 async def load_schedule(user: dict[str, Any], use_cache: bool) -> dict[str, Any]:
@@ -298,12 +305,6 @@ def _rate_limit(request: Request, scope: str, identity: str, limit: int, window_
 def _require_invite_admin(user: dict[str, Any]) -> None:
     if str(user.get("username") or "").casefold() != "muzermat":
         raise HTTPException(status_code=404, detail="功能不存在")
-
-
-def _require_douyin_access(user: dict[str, Any]) -> None:
-    if not can_use_douyin(user):
-        raise HTTPException(status_code=404, detail="功能暂时不可用")
-    require_feature(user, "spark")
 
 
 @app.on_event("startup")
@@ -493,7 +494,32 @@ async def notifications_websocket(websocket: WebSocket, token: str = Query(defau
 async def tibo_history(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     payload = list_tibo_history()
     payload["enabled"] = bool(user.get("tibo", {}).get("enabled", False))
+    payload["x_connected"] = bool(user.get("tibo", {}).get("x_cookies_encrypted"))
     return payload
+
+
+@app.post("/api/tibo/x-session")
+async def tibo_x_session(request: Request, payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Import the user's own X cookie (douyin-style hybrid envelope)."""
+    _rate_limit(request, "tibo-x-session", str(user.get("id") or ""), 5, 3600)
+    try:
+        cookie_text = decrypt_hybrid_secret(payload, max_plaintext=64 * 1024)
+        cookies = tibo.parse_x_cookie_text(cookie_text)
+        await tibo.verify_x_cookies(cookies)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"X Cookie 校验失败：{exc}") from exc
+    set_tibo_x_cookies(user.setdefault("tibo", {}), cookies)
+    save_user(user)
+    return {"valid": True, "message": "X Cookie 校验成功并已保存", "user": public_user(user)}
+
+
+@app.delete("/api/tibo/x-session")
+async def delete_tibo_x_session(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    clear_tibo_x_cookies(user.setdefault("tibo", {}))
+    save_user(user)
+    return {"success": True, "message": "X Cookie 已移除", "user": public_user(user)}
 
 
 @app.put("/api/tibo/config")
@@ -718,6 +744,108 @@ async def td_manual(payload: dict[str, Any] = Body(default={}), user: dict[str, 
     return result
 
 
+def _checkin_provider(provider_id: Any) -> Any:
+    try:
+        return get_provider(provider_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/checkin/providers")
+async def checkin_providers(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    return {"providers": list_providers()}
+
+
+@app.get("/api/checkin/{provider}/config")
+async def checkin_config(provider: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    module = _checkin_provider(provider)
+    cfg = (user.get("checkin") or {}).get(module.PROVIDER_ID) or {}
+    try:
+        token = get_checkin_token(cfg)
+    except ValueError:
+        token = ""
+    return {
+        "provider": module.PROVIDER_ID,
+        "connected": bool(token),
+        "token_tail": token[-6:] if token else "",
+    }
+
+
+@app.put("/api/checkin/{provider}/config")
+async def checkin_save_config(
+    request: Request,
+    provider: str,
+    payload: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    module = _checkin_provider(provider)
+    _rate_limit(request, "checkin-config", str(user.get("id") or ""), 10, 3600)
+    try:
+        token = module.validate_token(decrypt_transport_payload(payload, ("token",))["token"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not await module.check_token(token):
+        raise HTTPException(status_code=400, detail="签到 token 无效或已过期，请重新从小程序获取")
+    user.setdefault("checkin", {}).setdefault(module.PROVIDER_ID, {})
+    set_checkin_token(user["checkin"][module.PROVIDER_ID], token)
+    save_user(user)
+    return {
+        "provider": module.PROVIDER_ID,
+        "connected": True,
+        "token_tail": token[-6:],
+        "message": "签到 token 已保存并验证有效",
+    }
+
+
+def _checkin_token(user: dict[str, Any], module: Any) -> str:
+    cfg = (user.get("checkin") or {}).get(module.PROVIDER_ID) or {}
+    try:
+        token = get_checkin_token(cfg)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not token:
+        raise HTTPException(status_code=400, detail="请先配置签到 token")
+    return token
+
+
+@app.post("/api/checkin/{provider}/preview")
+async def checkin_preview(
+    request: Request,
+    provider: str,
+    payload: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    module = _checkin_provider(provider)
+    _rate_limit(request, "checkin-preview", str(user.get("id") or ""), 40, 600)
+    token = _checkin_token(user, module)
+    try:
+        activity = await module.fetch_activity(token, payload.get("code"))
+    except CheckinAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (CheckinError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"activity": activity}
+
+
+@app.post("/api/checkin/{provider}/sign")
+async def checkin_sign(
+    request: Request,
+    provider: str,
+    payload: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    module = _checkin_provider(provider)
+    _rate_limit(request, "checkin-sign", str(user.get("id") or ""), 15, 3600)
+    token = _checkin_token(user, module)
+    try:
+        result = await module.submit_sign(token, payload.get("code"), payload.get("values"))
+    except CheckinAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (CheckinError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result
+
+
 @app.get("/api/sunshine/status")
 async def sunshine_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     try:
@@ -734,7 +862,6 @@ async def sunshine_status(user: dict[str, Any] = Depends(current_user)) -> dict[
 
 @app.post("/api/douyin/qr/start")
 async def douyin_qr_start(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    _require_douyin_access(user)
     raise HTTPException(
         status_code=410,
         detail="抖音扫码登录已停用，请使用 Cookie 导入完成账号绑定",
@@ -744,7 +871,6 @@ async def douyin_qr_start(user: dict[str, Any] = Depends(current_user)) -> dict[
 @app.get("/api/douyin/qr/status")
 async def douyin_qr_status(login_id: str = Query(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     _ = login_id
-    _require_douyin_access(user)
     raise HTTPException(
         status_code=410,
         detail="抖音扫码登录已停用，请使用 Cookie 导入完成账号绑定",
@@ -754,13 +880,11 @@ async def douyin_qr_status(login_id: str = Query(...), user: dict[str, Any] = De
 @app.post("/api/douyin/qr/cancel")
 async def douyin_qr_cancel(payload: dict[str, Any] = Body(default={}), user: dict[str, Any] = Depends(current_user)) -> dict[str, str]:
     _ = payload
-    _require_douyin_access(user)
     return {"status": "ok"}
 
 
 @app.post("/api/douyin/session")
 async def douyin_session(request: Request, payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    _require_douyin_access(user)
     _rate_limit(request, "douyin-session", str(user.get("id") or ""), 5, 3600)
     try:
         cookie_text = decrypt_hybrid_secret(payload, max_plaintext=256 * 1024)
@@ -800,7 +924,6 @@ async def douyin_session(request: Request, payload: dict[str, Any] = Body(...), 
 
 @app.get("/api/douyin/session")
 async def get_douyin_session(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    _require_douyin_access(user)
     dy = public_user(user)["douyin"]
     return {
         "valid": bool(dy.get("connected")),
@@ -874,7 +997,6 @@ async def douyin_friends(
     refresh: bool = Query(False),
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
-    _require_douyin_access(user)
     cfg = user.setdefault("douyin", {})
     cookies = get_douyin_cookies(cfg)
     if not cookies:
@@ -915,7 +1037,6 @@ async def douyin_friends(
 
 @app.put("/api/douyin/config")
 async def douyin_config(request: Request, payload: dict[str, Any] = Body(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    _require_douyin_access(user)
     _rate_limit(request, "douyin-config", str(user.get("id") or ""), 30, 60)
     cfg = user.setdefault("douyin", {})
     try:
@@ -968,7 +1089,6 @@ async def douyin_config(request: Request, payload: dict[str, Any] = Body(...), u
 
 @app.post("/api/douyin/run")
 async def douyin_run(request: Request, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    _require_douyin_access(user)
     _rate_limit(request, "douyin-run", str(user.get("id") or ""), 3, 3600)
     try:
         result = await asyncio.to_thread(run_spark, user)
@@ -987,7 +1107,6 @@ async def douyin_run_target(
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
     """Send one real test message to one already-configured stable conversation."""
-    _require_douyin_access(user)
     # Share the same budget with the full manual run so the single-target
     # helper cannot be used to bypass the manual automation rate limit.
     _rate_limit(request, "douyin-run", str(user.get("id") or ""), 3, 3600)

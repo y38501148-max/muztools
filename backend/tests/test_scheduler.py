@@ -196,12 +196,87 @@ def test_security_challenge_blocks_automatic_retry_for_today(monkeypatch):
     assert scheduler_module.should_run_douyin_auto(user["douyin"], datetime.now(TZ_BEIJING)) is False
 
 
-def test_scheduler_disables_nonadmin_douyin(monkeypatch):
+def test_scheduler_keeps_nonadmin_douyin_enabled(monkeypatch):
     user = {"id": "u-other", "username": "other_user", "douyin": {"enabled": True, "hour": 0}}
-    saved = []
     monkeypatch.setattr(scheduler_module, "iter_users", lambda: [user])
-    monkeypatch.setattr(scheduler_module, "save_user", lambda value: saved.append(value))
+    monkeypatch.setattr(scheduler_module, "save_user", lambda value: None)
+    monkeypatch.setattr(scheduler_module, "push_notification", lambda *_args, **_kwargs: None)
+    import muztool.douyin as douyin_module
+    monkeypatch.setattr(douyin_module, "run_spark", lambda _user, **_kwargs: {"success": True, "results": []})
     asyncio.run(scheduler_module.douyin_hourly())
-    assert user["douyin"]["enabled"] is False
-    assert user["douyin"]["disabled_reason"] == "temporary_admin_only"
-    assert saved == [user]
+    assert user["douyin"]["enabled"] is True
+    assert "disabled_reason" not in user["douyin"]
+
+
+def test_tibo_monitor_prefers_user_cookie_and_skips_anonymous(monkeypatch):
+    import muztool.tibo as tibo_module
+    from datetime import datetime, timezone
+
+    user = {"id": "u1", "tibo": {"enabled": True, "x_cookies_encrypted": "v1:x"}}
+    monkeypatch.setattr(tibo_module, "iter_x_cookie_users", lambda: [user])
+    monkeypatch.setattr(tibo_module, "get_user_x_cookies", lambda _u: {"auth_token": "a", "ct0": "c"})
+
+    async def fake_auth_fetch(cookies, now, lookback_hours=168):
+        return tibo_module.FetchResult(("1",), ())
+
+    monkeypatch.setattr(tibo_module, "fetch_tibo_posts_authenticated", fake_auth_fetch)
+
+    calls = []
+
+    async def fake_check(fetcher=None, **_kwargs):
+        if fetcher is not None:
+            result = await fetcher(frozenset(), datetime.now(timezone.utc), 168)
+            calls.append(("auth", result.discovered_ids))
+        else:
+            calls.append(("anonymous",))
+        return tibo_module.CheckReport(False, 0, 0, 0)
+
+    monkeypatch.setattr(tibo_module, "check_tibo_updates", fake_check)
+    asyncio.run(scheduler_module.tibo_monitor())
+    assert calls == [("auth", ("1",))]
+
+
+def test_tibo_monitor_notifies_expired_cookie_and_falls_back(monkeypatch):
+    import muztool.tibo as tibo_module
+    from datetime import datetime, timezone
+
+    user = {"id": "u1", "tibo": {"enabled": True, "x_cookies_encrypted": "v1:x"}}
+    monkeypatch.setattr(tibo_module, "iter_x_cookie_users", lambda: [user])
+    monkeypatch.setattr(tibo_module, "get_user_x_cookies", lambda _u: {"auth_token": "a", "ct0": "c"})
+    expired = []
+    monkeypatch.setattr(tibo_module, "notify_x_cookie_expired", lambda u, now: expired.append(u["id"]))
+
+    async def fake_auth_fetch(cookies, now, lookback_hours=168):
+        raise tibo_module.XAuthError("expired")
+
+    monkeypatch.setattr(tibo_module, "fetch_tibo_posts_authenticated", fake_auth_fetch)
+
+    calls = []
+
+    async def fake_check(fetcher=None, **_kwargs):
+        if fetcher is not None:
+            await fetcher(frozenset(), datetime.now(timezone.utc), 168)
+        calls.append("auth" if fetcher is not None else "anonymous")
+        return tibo_module.CheckReport(False, 0, 0, 0)
+
+    monkeypatch.setattr(tibo_module, "check_tibo_updates", fake_check)
+    asyncio.run(scheduler_module.tibo_monitor())
+    assert expired == ["u1"]
+    # The authenticated fetch raised XAuthError before finishing, so only the
+    # anonymous fallback check completes.
+    assert calls == ["anonymous"]
+
+
+def test_tibo_monitor_falls_back_when_no_cookie_users(monkeypatch):
+    import muztool.tibo as tibo_module
+
+    monkeypatch.setattr(tibo_module, "iter_x_cookie_users", lambda: [])
+    calls = []
+
+    async def fake_check(fetcher=None, **_kwargs):
+        calls.append(fetcher is not None)
+        return tibo_module.CheckReport(False, 0, 0, 0)
+
+    monkeypatch.setattr(tibo_module, "check_tibo_updates", fake_check)
+    asyncio.run(scheduler_module.tibo_monitor())
+    assert calls == [False]

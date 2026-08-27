@@ -8,6 +8,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import os
+from typing import Any
 from urllib.parse import urljoin, urlparse, unquote
 
 # Adapted from muz-bot duaa_core. Persistence is owned by muztool.store.
@@ -253,6 +254,21 @@ async def execute_sign_in(use_vpn, cookies, uid, course_sched_id, session_id=Non
         res.raise_for_status()
         return res.json()
 
+def parse_schedule_payload(data: Any) -> list:
+    """Interpret an iClass get_stu_course_sched response.
+
+    iClass replies {"STATUS":"2"} with no ERRMSG when the student has no
+    courses on the requested date; only a non-empty ERRMSG is a real error.
+    """
+    if str(data.get("STATUS")) != "0":
+        errmsg = str(data.get("ERRMSG") or "").strip()
+        if errmsg:
+            raise ValueError(errmsg)
+        return []
+    rows = data.get("result") or []
+    return rows if isinstance(rows, list) else []
+
+
 async def safe_fetch_schedule(acc, today_str):
     has_vpn = False
     uid, sess, cookies = acc.get('uid'), acc.get('session_id'), acc.get('cookies')
@@ -263,9 +279,7 @@ async def safe_fetch_schedule(acc, today_str):
         async with httpx.AsyncClient(verify=False, cookies=cookies or {}) as client:
             res = await client.get(urls["schedule"], params={"id": uid, "dateStr": today_str}, headers={"Sessionid": sess, "User-Agent": UA})
             res.raise_for_status()
-            data = res.json()
-            if str(data.get("STATUS")) != "0": raise ValueError(data.get("ERRMSG", "Error"))
-            return data.get("result", [])
+            return parse_schedule_payload(res.json())
 
     if not uid or not sess:
         uid, sess, _, cookies = await perform_duaa_login(acc['student_id'], acc.get('password'))

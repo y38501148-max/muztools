@@ -167,7 +167,7 @@ async def query_td_counts(student_id: str, password: str) -> list[dict[str, Any]
         for match in SCORE_RE.finditer(page.text)
     ]
     if not rows:
-        raise ValueError("未能解析 TD 次数页面，请确认学号密码或稍后重试")
+        raise ValueError("健康云锻炼次数页面已改版，TD 次数查询暂不可用；手动打卡不受影响")
     rows.sort(key=lambda item: (item["term_start"], item["term_end"], item["term_no"]), reverse=True)
     return rows
 
