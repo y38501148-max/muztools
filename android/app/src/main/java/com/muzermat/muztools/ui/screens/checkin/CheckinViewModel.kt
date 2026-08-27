@@ -27,6 +27,8 @@ data class CheckinUiState(
     val activityCode: String = "",
     val activity: CheckinActivity? = null,
     val fieldValues: Map<String, String> = emptyMap(),
+    val locationLongitude: String = "",
+    val locationLatitude: String = "",
     val error: String = ""
 )
 
@@ -43,16 +45,14 @@ class CheckinViewModel(private val apiClient: ApiClient) : ViewModel() {
             _uiState.update { it.copy(isLoading = true, error = "") }
             apiClient.getCheckinProviders().fold(
                 onSuccess = { response ->
-                    val firstId = response.providers.firstOrNull()?.id.orEmpty()
                     _uiState.update {
                         it.copy(
                             isLoading = false,
                             providers = response.providers,
-                            selectedProviderId = firstId,
-                            error = if (firstId.isBlank()) "服务端暂未配置签到平台" else ""
+                            selectedProviderId = "",
+                            error = if (response.providers.isEmpty()) "服务端暂未配置签到平台" else ""
                         )
                     }
-                    if (firstId.isNotBlank()) loadConfig(firstId)
                 },
                 onFailure = { error ->
                     _uiState.update { it.copy(isLoading = false, error = error.message ?: "读取签到平台失败") }
@@ -65,19 +65,38 @@ class CheckinViewModel(private val apiClient: ApiClient) : ViewModel() {
         _uiState.value = CheckinUiState()
     }
 
-    fun selectProvider(providerId: String) {
-        if (providerId == _uiState.value.selectedProviderId) return
+    fun openProvider(providerId: String) {
+        if (providerId.isBlank()) return
         _uiState.update {
             it.copy(
                 selectedProviderId = providerId,
                 config = CheckinConfigResponse(provider = providerId),
                 isEditingToken = false,
+                activityCode = "",
                 activity = null,
                 fieldValues = emptyMap(),
+                locationLongitude = "",
+                locationLatitude = "",
                 error = ""
             )
         }
         loadConfig(providerId)
+    }
+
+    fun closeProvider() {
+        _uiState.update {
+            it.copy(
+                selectedProviderId = "",
+                config = CheckinConfigResponse(),
+                isEditingToken = false,
+                activityCode = "",
+                activity = null,
+                fieldValues = emptyMap(),
+                locationLongitude = "",
+                locationLatitude = "",
+                error = ""
+            )
+        }
     }
 
     private fun loadConfig(providerId: String = _uiState.value.selectedProviderId) {
@@ -99,6 +118,10 @@ class CheckinViewModel(private val apiClient: ApiClient) : ViewModel() {
                 }
             )
         }
+    }
+
+    fun showMessage(message: String) {
+        viewModelScope.launch { _messageFlow.emit(message) }
     }
 
     fun beginTokenEdit() {
@@ -136,7 +159,16 @@ class CheckinViewModel(private val apiClient: ApiClient) : ViewModel() {
     }
 
     fun updateActivityCode(value: String) {
-        _uiState.update { it.copy(activityCode = value, activity = null, fieldValues = emptyMap(), error = "") }
+        _uiState.update {
+            it.copy(
+                activityCode = value,
+                activity = null,
+                fieldValues = emptyMap(),
+                locationLongitude = "",
+                locationLatitude = "",
+                error = ""
+            )
+        }
     }
 
     fun preview() {
@@ -144,20 +176,41 @@ class CheckinViewModel(private val apiClient: ApiClient) : ViewModel() {
         val code = state.activityCode.trim()
         if (state.selectedProviderId.isBlank() || code.isBlank() || state.isPreviewing) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isPreviewing = true, activity = null, fieldValues = emptyMap(), error = "") }
+            _uiState.update {
+                it.copy(
+                    isPreviewing = true,
+                    activity = null,
+                    fieldValues = emptyMap(),
+                    locationLongitude = "",
+                    locationLatitude = "",
+                    error = ""
+                )
+            }
             apiClient.previewCheckin(state.selectedProviderId, code).fold(
                 onSuccess = { response ->
                     _uiState.update {
                         it.copy(
                             isPreviewing = false,
                             activity = response.activity,
-                            fieldValues = response.activity.fields.associate { field -> field.title to "" }
+                            fieldValues = response.activity.fields.associate { field -> field.title to "" },
+                            locationLongitude = response.activity.locationLongitude,
+                            locationLatitude = response.activity.locationLatitude
                         )
                     }
                 },
                 onFailure = { error ->
                     _uiState.update { it.copy(isPreviewing = false, error = error.message ?: "读取活动失败") }
                 }
+            )
+        }
+    }
+
+    fun updateLocation(longitude: String? = null, latitude: String? = null) {
+        _uiState.update {
+            it.copy(
+                locationLongitude = longitude ?: it.locationLongitude,
+                locationLatitude = latitude ?: it.locationLatitude,
+                error = ""
             )
         }
     }
@@ -175,12 +228,21 @@ class CheckinViewModel(private val apiClient: ApiClient) : ViewModel() {
             viewModelScope.launch { _messageFlow.emit("请填写${missing.title}") }
             return
         }
+        if (activity.locationRequired && (state.locationLongitude.isBlank() || state.locationLatitude.isBlank())) {
+            viewModelScope.launch { _messageFlow.emit("活动未返回目标坐标，请填写签到经纬度") }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isSigning = true, error = "") }
             apiClient.submitCheckin(
                 provider = state.selectedProviderId,
                 code = activity.code.ifBlank { state.activityCode.trim() },
-                values = state.fieldValues
+                values = state.fieldValues,
+                options = if (activity.locationRequired) {
+                    mapOf("lng" to state.locationLongitude.trim(), "lat" to state.locationLatitude.trim())
+                } else {
+                    emptyMap()
+                }
             ).fold(
                 onSuccess = { response ->
                     _uiState.update { it.copy(isSigning = false) }

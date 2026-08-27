@@ -838,7 +838,12 @@ async def checkin_sign(
     _rate_limit(request, "checkin-sign", str(user.get("id") or ""), 15, 3600)
     token = _checkin_token(user, module)
     try:
-        result = await module.submit_sign(token, payload.get("code"), payload.get("values"))
+        result = await module.submit_sign(
+            token,
+            payload.get("code"),
+            payload.get("values"),
+            payload.get("options") or {},
+        )
     except CheckinAuthError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (CheckinError, ValueError) as exc:

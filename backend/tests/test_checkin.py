@@ -172,6 +172,58 @@ def test_submit_sign_uses_activity_coordinates_and_form_values():
     assert form[1]["value"] == "2413010"
 
 
+def test_submit_sign_uses_manual_coordinates_when_activity_hides_them():
+    sign_info = json.loads(json.dumps(SIGN_INFO))
+    sign_info["data"]["info"]["location_longitude"] = ""
+    sign_info["data"]["info"]["location_latitude"] = ""
+    captured = []
+    client = make_mock_client(sign_info=sign_info, captured=captured)
+    result = asyncio.run(
+        submit_sign(
+            "a" * 32,
+            "AS202608243746752343",
+            {"姓名": "张三", "学号": "2413010"},
+            {"lng": "116.35062", "lat": "39.984077"},
+            client=client,
+        )
+    )
+    assert result["success"] is True
+    body = parse_qs([item for item in captured if item[0] == "/api/activity/signDo"][0][2])
+    assert body["lng"] == ["116.35062"]
+    assert body["lat"] == ["39.984077"]
+
+
+def test_submit_sign_requires_manual_coordinates_when_activity_hides_them():
+    sign_info = json.loads(json.dumps(SIGN_INFO))
+    sign_info["data"]["info"]["location_longitude"] = ""
+    sign_info["data"]["info"]["location_latitude"] = ""
+    with pytest.raises(CheckinError, match="手动填写签到经纬度"):
+        asyncio.run(
+            submit_sign(
+                "a" * 32,
+                "AS202608243746752343",
+                {"姓名": "张三", "学号": "2413010"},
+                client=make_mock_client(sign_info=sign_info),
+            )
+        )
+
+
+def test_submit_sign_rejects_invalid_manual_coordinates():
+    sign_info = json.loads(json.dumps(SIGN_INFO))
+    sign_info["data"]["info"]["location_longitude"] = ""
+    sign_info["data"]["info"]["location_latitude"] = ""
+    with pytest.raises(CheckinError, match="经度超出有效范围"):
+        asyncio.run(
+            submit_sign(
+                "a" * 32,
+                "AS202608243746752343",
+                {"姓名": "张三", "学号": "2413010"},
+                {"lng": "181", "lat": "39.984077"},
+                client=make_mock_client(sign_info=sign_info),
+            )
+        )
+
+
 def test_submit_sign_maps_business_reject_to_result():
     client = make_mock_client(sign_do={"code": 0, "info": "已签到，无需再次签到！", "data": {}})
     result = asyncio.run(

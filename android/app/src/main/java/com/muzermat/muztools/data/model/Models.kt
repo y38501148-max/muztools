@@ -364,7 +364,8 @@ data class CheckinPreviewResponse(
 @Serializable
 data class CheckinSignRequest(
     val code: String,
-    val values: Map<String, String> = emptyMap()
+    val values: Map<String, String> = emptyMap(),
+    val options: Map<String, String> = emptyMap()
 )
 
 @Serializable

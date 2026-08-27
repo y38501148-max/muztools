@@ -387,8 +387,13 @@ class ApiClient(private val prefs: PreferencesManager) {
     suspend fun previewCheckin(provider: String, code: String): Result<CheckinPreviewResponse> =
         executePost("/api/checkin/${android.net.Uri.encode(provider)}/preview", CheckinPreviewRequest(code))
 
-    suspend fun submitCheckin(provider: String, code: String, values: Map<String, String>): Result<CheckinSignResponse> =
-        executePost("/api/checkin/${android.net.Uri.encode(provider)}/sign", CheckinSignRequest(code, values))
+    suspend fun submitCheckin(
+        provider: String,
+        code: String,
+        values: Map<String, String>,
+        options: Map<String, String> = emptyMap()
+    ): Result<CheckinSignResponse> =
+        executePost("/api/checkin/${android.net.Uri.encode(provider)}/sign", CheckinSignRequest(code, values, options))
 
     suspend fun getAppVersion(): Result<AppVersion> =
         executeGet("/api/app/version")

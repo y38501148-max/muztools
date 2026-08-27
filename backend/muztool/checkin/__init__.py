@@ -14,8 +14,9 @@ provider 模块契约：
   ``code/name/start_at/end_at/can_sign/location_required/location_address/
   location_longitude/location_latitude/sign_time/fields``，其中 ``fields``
   为 ``[{title, data_type, options, required}]``。
-- ``async submit_sign(token, code, values) -> dict``：执行签到，返回
-  ``{success, message, activity}``。
+- ``async submit_sign(token, code, values, options) -> dict``：执行签到，返回
+  ``{success, message, activity}``；``options`` 用于 provider 特有的补充参数
+  （例如活动不回传目标坐标时手动提供 ``lng/lat``）。
 """
 
 from __future__ import annotations

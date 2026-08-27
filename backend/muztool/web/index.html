@@ -703,6 +703,7 @@
     checkinCode: "",
     checkinActivity: null,
     checkinValues: {},
+    checkinLocation: {lng: "", lat: ""},
     checkinResult: null,
     checkinError: "",
     tiboHistory: null,
@@ -1908,10 +1909,41 @@
         <div class="empty-state"><div class="empty-icon">📭</div><div>暂无可用的签到平台</div></div>
       `;
     }
-    if (!state.checkinProvider || !providers.some(p => p.id === state.checkinProvider)) {
-      state.checkinProvider = providers[0].id;
+    if (!state.checkinProvider) {
+      return `
+        ${renderPageBackHeader("签到工具")}
+        <div class="card" style="background: var(--primary-soft); border-color: #bfdbfe;">
+          <div class="row" style="align-items: flex-start;">
+            <div class="icon-box" style="background: #ffffffaa; color: var(--primary);">🧭</div>
+            <div style="flex: 1;">
+              <h3>远程签到功能区</h3>
+              <p class="muted-sm" style="margin-top: 4px;">请选择对应的签到平台。进入小板块后，可查看完整教程、导入 Token、查询活动并执行签到。</p>
+            </div>
+          </div>
+        </div>
+        <div class="section-title">签到平台</div>
+        ${providers.map(provider => `
+          <div class="card">
+            <div class="row-between">
+              <div class="row" style="flex: 1;">
+                <div class="icon-box" style="background: #2e7d3218; color: #2e7d32;">✅</div>
+                <div style="flex: 1;">
+                  <h3>${esc(provider.name || provider.id)}</h3>
+                  <p class="muted-sm" style="margin-top: 3px;">${esc(provider.description || "进入平台签到功能")}</p>
+                </div>
+              </div>
+              <button type="button" class="btn sm" data-action="checkin-open-provider" data-provider="${esc(provider.id)}" aria-label="进入${esc(provider.name || provider.id)}">进入功能</button>
+            </div>
+          </div>
+        `).join("")}
+      `;
     }
     const providerId = state.checkinProvider;
+    const selectedProvider = providers.find(p => p.id === providerId);
+    if (!selectedProvider) {
+      state.checkinProvider = "";
+      return renderCheckinView();
+    }
     if (!state.checkinConfigs[providerId]) {
       state.checkinConfigs[providerId] = await api(`/api/checkin/${encodeURIComponent(providerId)}/config`).catch(() => ({connected: false, token_tail: ""}));
     }
@@ -1919,15 +1951,43 @@
     const act = state.checkinActivity;
     const result = state.checkinResult;
 
-    const providerCard = providers.length > 1
-      ? `
-      <div class="card">
-        <h3>签到平台</h3>
-        <select id="checkin-provider" class="input" style="margin-top: 12px;">
-          ${providers.map(p => `<option value="${esc(p.id)}" ${p.id === providerId ? "selected" : ""}>${esc(p.name || p.id)}</option>`).join("")}
-        </select>
-      </div>`
-      : "";
+    const detailHeader = `
+      <div class="topbar">
+        <div class="row">
+          <button type="button" class="btn ghost sm" data-action="checkin-back-providers">← 返回平台</button>
+          <h2>${esc(selectedProvider.name || "签到平台")}</h2>
+        </div>
+        <div class="topbar-actions"><button type="button" class="btn ghost sm" data-action="refresh-view">刷新</button></div>
+      </div>`;
+
+    const tutorialCard = `
+      <details class="card" open>
+        <summary style="cursor: pointer; list-style: none;">
+          <div class="row-between">
+            <div class="row">
+              <div class="icon-box" style="background: var(--primary-soft); color: var(--primary);">📖</div>
+              <div><h3>首次使用教程</h3><p class="muted-sm">Token 获取、导入和签到完整流程</p></div>
+            </div>
+            <span class="badge gray">展开 / 收起</span>
+          </div>
+        </summary>
+        <div style="margin-top: 16px;">
+          ${[
+            ["1", "获取 Token（推荐电脑端微信）", `在电脑安装并打开 Proxyman、Charles 或 mitmproxy，按工具提示安装并信任 HTTPS 证书，再把系统 HTTP/HTTPS 代理指向抓包工具。打开微信中的“${esc(selectedProvider.name || providerId)}”小程序并重新登录。`],
+            ["2", "复制 32 位 Token", "在抓包记录中搜索 <code>qiandaoerweima.yuleji.top</code>，打开 <code>POST /api/wxapp/auth</code> 响应并复制 <code>data.token.token</code>；也可从 <code>signInfo</code> 等后续请求头 <code>authori-zation</code> 中复制。只分析你自己的账号与流量。"],
+            ["3", "导入并验证", "回到此页点击“从剪贴板粘贴”，确认后选择“保存并验证”。Token 约 2 小时有效，重新登录小程序会使旧 Token 失效。"],
+            ["4", "查询并签到", "从老师展示的二维码或链接中取得 AS 开头的活动码，查询活动，核对名称、时间和地点，填写姓名、学号等必填项，再点击“执行签到”。"]
+          ].map(step => `
+            <div class="row" style="align-items: flex-start; margin-bottom: 13px;">
+              <span class="badge ok" style="min-width: 24px; justify-content: center;">${step[0]}</span>
+              <div style="flex: 1;"><b>${step[1]}</b><p class="muted-sm" style="margin-top: 3px;">${step[2]}</p></div>
+            </div>
+          `).join("")}
+          <div style="border-top: 1px solid var(--line); padding-top: 12px;" class="muted-sm">
+            🔒 浏览器无法越权直接读取微信中的 Token，因此不提供虚假的“自动提取”。剪贴板按钮只在你主动点击时读取；请仅分析自己的流量，也不要把 Token 发送给他人。
+          </div>
+        </div>
+      </details>`;
 
     const tokenCard = (cfg.connected && !state.checkinEditingToken)
       ? `
@@ -1946,9 +2006,10 @@
       : `
       <div class="card">
         <h3>配置签到 Token</h3>
-        <p class="muted-sm" style="margin: 6px 0 12px;">在「${esc(providers.find(p => p.id === providerId)?.name || providerId)}」小程序中登录后，从请求头 <code>authori-zation</code> 获取 32 位 token。约 2 小时有效，重新登录会使旧 token 失效。</p>
-        <div class="row" style="gap: 8px;">
-          <input id="checkin-token-input" class="input" style="flex: 1;" placeholder="32 位十六进制 token" autocomplete="off" spellcheck="false" value="" />
+        <p class="muted-sm" style="margin: 6px 0 12px;">请先按上方教程从“${esc(selectedProvider.name || providerId)}”小程序获取 32 位 Token。你可以手动粘贴，也可以点击剪贴板按钮快速填入。</p>
+        <div class="row" style="gap: 8px; align-items: stretch; flex-wrap: wrap;">
+          <input type="password" id="checkin-token-input" class="input" style="flex: 1; min-width: 210px;" placeholder="32 位十六进制 token" autocomplete="off" spellcheck="false" value="" />
+          <button type="button" class="btn soft" data-action="checkin-paste-token">📋 从剪贴板粘贴</button>
           <button type="button" class="btn" data-action="checkin-save-token">保存并验证</button>
           ${cfg.connected ? `<button type="button" class="btn soft" data-action="checkin-cancel-edit-token">取消</button>` : ""}
         </div>
@@ -1983,10 +2044,25 @@
           <div style="flex: 1; padding-right: 12px;">
             <h3>${esc(act.name || "未命名活动")}</h3>
             <p class="muted-sm" style="margin-top: 4px;">活动时间：${esc(act.start_at || "?")} ~ ${esc(act.end_at || "?")}${windows ? `（签到时段 ${windows}）` : ""}</p>
-            ${act.location_required ? `<p class="muted-sm" style="margin-top: 4px;">📍 定位签到：${esc(act.location_address || "已开启")}，将自动使用活动坐标完成</p>` : ""}
+            ${act.location_required
+              ? (act.location_longitude && act.location_latitude
+                ? `<p class="muted-sm" style="margin-top: 4px;">📍 定位签到：${esc(act.location_address || "已开启")}，将自动使用活动坐标完成</p>`
+                : `<p class="muted-sm" style="margin-top: 4px;color:#b45309;">📍 定位签到：${esc(act.location_address || "已开启")}，活动未回传目标坐标，请在下方手动填写。</p>`)
+              : ""}
           </div>
           <span class="badge ${act.can_sign === 1 ? "ok" : "gray"}">${act.can_sign === 1 ? "可签到" : "状态 " + esc(String(act.can_sign))}</span>
         </div>
+        ${act.location_required && (!act.location_longitude || !act.location_latitude) ? `
+          <div class="row" style="gap: 8px; margin-top: 14px;">
+            <div style="flex:1;">
+              <label class="muted-sm" style="display:block;margin-bottom:6px;font-weight:600;">目标经度 *</label>
+              <input id="checkin-lng-input" class="input" value="${esc(state.checkinLocation.lng || "")}" placeholder="如 116.23128" inputmode="decimal" />
+            </div>
+            <div style="flex:1;">
+              <label class="muted-sm" style="display:block;margin-bottom:6px;font-weight:600;">目标纬度 *</label>
+              <input id="checkin-lat-input" class="input" value="${esc(state.checkinLocation.lat || "")}" placeholder="如 40.22077" inputmode="decimal" />
+            </div>
+          </div>` : ""}
         ${fieldsHtml ? `<div style="margin-top: 16px;">${fieldsHtml}</div>` : `<p class="muted-sm" style="margin-top: 12px;">该活动无需填写表单。</p>`}
         <div class="row" style="margin-top: 16px; justify-content: flex-end;">
           <button type="button" class="btn" data-action="checkin-sign">执行签到</button>
@@ -2013,10 +2089,10 @@
       : "";
 
     return `
-      ${renderPageBackHeader("签到工具")}
+      ${detailHeader}
       ${errorCard}
       ${resultCard}
-      ${providerCard}
+      ${tutorialCard}
       ${tokenCard}
       ${activityCard}
       ${detailCards}
@@ -2283,6 +2359,15 @@
     if (navBtn) {
       e.preventDefault();
       const route = navBtn.dataset.nav;
+      if (route === "checkin") {
+        state.checkinProvider = "";
+        state.checkinActivity = null;
+        state.checkinValues = {};
+        state.checkinLocation = {lng: "", lat: ""};
+        state.checkinResult = null;
+        state.checkinError = "";
+        state.checkinEditingToken = false;
+      }
       if (route) switchRoute(route);
       return;
     }
@@ -2419,7 +2504,51 @@
     }
 
 
-    // 签到工具：token 保存 / 查询 / 签到
+    // 签到工具：板块导航 / Token 保存 / 查询 / 签到
+    if (action === "checkin-open-provider") {
+      const providerId = String(actionBtn.dataset.provider || "").trim();
+      if (!providerId) return;
+      state.checkinProvider = providerId;
+      state.checkinActivity = null;
+      state.checkinValues = {};
+      state.checkinLocation = {lng: "", lat: ""};
+      state.checkinResult = null;
+      state.checkinError = "";
+      state.checkinEditingToken = false;
+      await renderPage();
+      return;
+    }
+
+    if (action === "checkin-back-providers") {
+      state.checkinProvider = "";
+      state.checkinActivity = null;
+      state.checkinValues = {};
+      state.checkinLocation = {lng: "", lat: ""};
+      state.checkinResult = null;
+      state.checkinError = "";
+      state.checkinEditingToken = false;
+      await renderPage();
+      return;
+    }
+
+    if (action === "checkin-paste-token") {
+      const input = $("checkin-token-input");
+      if (!input) return;
+      try {
+        if (!navigator.clipboard || !navigator.clipboard.readText) {
+          throw new Error("当前浏览器不支持读取剪贴板，请长按输入框手动粘贴");
+        }
+        const text = (await navigator.clipboard.readText()).trim();
+        if (!text) throw new Error("剪贴板中没有可用的 Token");
+        input.value = text;
+        input.focus();
+        toast("已从剪贴板粘贴，请确认后保存");
+      } catch (err) {
+        toast(err.message || "读取剪贴板失败，请手动粘贴", "error");
+      }
+      return;
+    }
+
     if (action === "checkin-save-token") {
       await withButtonLoading(actionBtn, async () => {
         const input = $("checkin-token-input");
@@ -2461,6 +2590,10 @@
           const result = await api(`/api/checkin/${encodeURIComponent(state.checkinProvider)}/preview`, {method: "POST", body: {code}});
           state.checkinActivity = result.activity || null;
           state.checkinValues = {};
+          state.checkinLocation = {
+            lng: result.activity?.location_longitude || "",
+            lat: result.activity?.location_latitude || ""
+          };
           state.checkinResult = null;
         } catch (err) {
           state.checkinActivity = null;
@@ -2481,7 +2614,16 @@
           if (title) values[title] = el.value;
         });
         try {
-          const result = await api(`/api/checkin/${encodeURIComponent(state.checkinProvider)}/sign`, {method: "POST", body: {code: activity.code, values}});
+          const options = {};
+          if (activity.location_required) {
+            options.lng = state.checkinLocation.lng || activity.location_longitude || "";
+            options.lat = state.checkinLocation.lat || activity.location_latitude || "";
+            if (!options.lng || !options.lat) {
+              toast("请填写目标经纬度");
+              return;
+            }
+          }
+          const result = await api(`/api/checkin/${encodeURIComponent(state.checkinProvider)}/sign`, {method: "POST", body: {code: activity.code, values, options}});
           state.checkinResult = result;
           state.checkinError = "";
         } catch (err) {
@@ -2776,6 +2918,16 @@
       state.checkinCode = checkinCode.value.trim();
       return;
     }
+    const checkinLng = e.target.closest("#checkin-lng-input");
+    if (checkinLng) {
+      state.checkinLocation.lng = checkinLng.value.trim();
+      return;
+    }
+    const checkinLat = e.target.closest("#checkin-lat-input");
+    if (checkinLat) {
+      state.checkinLocation.lat = checkinLat.value.trim();
+      return;
+    }
     const checkinField = e.target.closest("[data-checkin-field]");
     if (checkinField && checkinField.dataset.checkinField) {
       state.checkinValues[checkinField.dataset.checkinField] = checkinField.value;
@@ -2797,17 +2949,6 @@
   });
 
   document.addEventListener("change", (e) => {
-    const providerSelect = e.target.closest("#checkin-provider");
-    if (providerSelect && providerSelect.value && providerSelect.value !== state.checkinProvider) {
-      state.checkinProvider = providerSelect.value;
-      state.checkinActivity = null;
-      state.checkinValues = {};
-      state.checkinResult = null;
-      state.checkinError = "";
-      state.checkinEditingToken = false;
-      renderPage();
-      return;
-    }
     const checkinSelect = e.target.closest("select[data-checkin-field]");
     if (checkinSelect && checkinSelect.dataset.checkinField) {
       state.checkinValues[checkinSelect.dataset.checkinField] = checkinSelect.value;

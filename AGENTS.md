@@ -110,6 +110,13 @@ muz-tool/
 - WebUI 和 Android 优先使用 `/api/signin/schedule.enabled`，失败时回退 `/api/student.auto_signin`。
 - 调度器使用 `student_runtime()`，不得在事件循环内运行 Playwright Sync API。
 
+### 签到工具
+
+- “签到工具”采用两级信息架构：进入大板块后先展示 provider 功能卡片，用户再次点击才进入对应平台详情；即使当前只有一个 provider，也不得自动跳过平台列表。
+- provider 详情必须同步提供完整使用教程：获取 Token、导入验证、查询活动、填写表单并签到；WebUI 与 Android 均提供用户主动触发的“从剪贴板粘贴”辅助。
+- 微信 Token 来自小程序认证响应或 `authori-zation` 请求头，普通 Web/Android 客户端无权跨进程自动读取；不得宣称或实现虚假的“一键提取”。Token 传输与静态存储继续使用现有 RSA/AES-GCM 方案，不得写入日志。
+- 接入新签到小程序时在 `backend/muztool/checkin/` 新增 provider 并注册，双端平台列表从 `/api/checkin/providers` 动态读取。
+
 ### 抖音续火花
 
 - 正式入口为 Cookie 导入，扫码 API 仅保留停用提示。
@@ -187,7 +194,7 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.4.1 为 `versionCode 28`；v1.4.0 为 `versionCode 27`。
+发布版本需同步递增 `android/app/build.gradle.kts` 的 `versionCode` 和 `versionName`。v1.4.2 为 `versionCode 29`；v1.4.1 为 `versionCode 28`。
 
 ## 服务端部署
 

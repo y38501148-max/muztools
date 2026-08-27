@@ -225,16 +225,32 @@ def _sanitize_values(values: Any) -> dict[str, str]:
     return clean
 
 
+def _location_value(value: Any, *, kind: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        number = float(text)
+    except (TypeError, ValueError) as exc:
+        raise CheckinError(f"{kind}格式无效") from exc
+    limit = 180 if kind == "经度" else 90
+    if number < -limit or number > limit:
+        raise CheckinError(f"{kind}超出有效范围")
+    return text
+
+
 async def submit_sign(
     token: str,
     code: Any,
     values: dict[str, str],
+    options: dict[str, Any] | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
     """执行签到。
 
-    定位签到直接使用活动自身坐标作为上报坐标（服务端只比较距离），
-    口令签到无需携带口令（服务端不校验）。
+    定位签到优先使用活动自身坐标；活动只返回地址、隐藏坐标时使用
+    ``options`` 里的手动 ``lng/lat``。服务端只比较距离，口令签到无需
+    携带口令（服务端不校验）。
     """
     code = validate_activity_code(code)
     clean = _sanitize_values(values)
@@ -247,11 +263,13 @@ async def submit_sign(
 
     body = {"code": code, "from_data": json.dumps(form, ensure_ascii=False, separators=(",", ":"))}
     if activity["location_required"]:
-        lng = activity["location_longitude"]
-        lat = activity["location_latitude"]
-        if lng and lat:
-            body["lng"] = lng
-            body["lat"] = lat
+        options = options if isinstance(options, dict) else {}
+        lng = _location_value(activity["location_longitude"] or options.get("lng"), kind="经度")
+        lat = _location_value(activity["location_latitude"] or options.get("lat"), kind="纬度")
+        if not lng or not lat:
+            raise CheckinError("活动未返回目标坐标，请手动填写签到经纬度")
+        body["lng"] = lng
+        body["lat"] = lat
 
     result = await _post("/api/activity/signDo", token, body, client=client)
     success = int(result.get("code") or 0) == 1
